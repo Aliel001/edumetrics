@@ -1,0 +1,153 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id        String   @id @default(cuid())
+  fullname  String
+  email     String   @unique
+  password  String
+  phone     String?
+  role      String   // "admin" or "teacher"
+  school_id String   @default("default-school")
+  createdAt DateTime @default(now())
+
+  assignments TeacherAssignment[]
+  marks       Mark[]
+  timetables  Timetable[]
+}
+
+model Class {
+  id        String   @id @default(cuid())
+  className String
+  school_id String   @default("default-school")
+  students  Student[]
+  assignments TeacherAssignment[]
+  timetables  Timetable[]
+
+  @@unique([className, school_id])
+}
+
+model Student {
+  id        String   @id @default(cuid())
+  firstname String
+  lastname  String
+  gender    String
+  class     Class    @relation(fields: [classId], references: [id])
+  classId   String
+  school_id String   @default("default-school")
+  marks     Mark[]
+  createdAt DateTime @default(now())
+}
+
+model Subject {
+  id             String   @id @default(cuid())
+  subjectName    String
+  periodsPerWeek Int      @default(0)
+  subjectWeight  Float    @default(0.0)
+  school_id      String   @default("default-school")
+  assignments    TeacherAssignment[]
+  marks          Mark[]
+  timetables     Timetable[]
+
+  @@unique([subjectName, school_id])
+}
+
+model TeacherAssignment {
+  id             String   @id @default(cuid())
+  teacher        User     @relation(fields: [teacherId], references: [id])
+  teacherId      String
+  class          Class    @relation(fields: [classId], references: [id])
+  classId        String
+  subject        Subject  @relation(fields: [subjectId], references: [id])
+  subjectId      String
+  periodsPerWeek Int      @default(5)
+
+  @@unique([teacherId, classId, subjectId])
+}
+
+model TimeSlot {
+  id          String   @id @default(cuid())
+  startTime   String
+  endTime     String
+  slotType    String   @default("class") // "class", "break", "lunch"
+  createdAt   DateTime @default(now())
+  timetables  Timetable[]
+}
+
+model Weekday {
+  id        String      @id @default(cuid())
+  dayName   String      @unique
+  timetables Timetable[]
+}
+
+model Timetable {
+  id         String   @id @default(cuid())
+  class      Class    @relation(fields: [classId], references: [id])
+  classId    String
+  subject    Subject? @relation(fields: [subjectId], references: [id])
+  subjectId  String?
+  teacher    User?    @relation(fields: [teacherId], references: [id])
+  teacherId  String?
+  timeSlot   TimeSlot @relation(fields: [timeSlotId], references: [id])
+  timeSlotId String
+  weekday    Weekday  @relation(fields: [weekdayId], references: [id])
+  weekdayId  String
+  createdAt  DateTime @default(now())
+
+  @@unique([classId, timeSlotId, weekdayId])
+  @@unique([teacherId, timeSlotId, weekdayId])
+}
+
+model Mark {
+  id                      String   @id @default(cuid())
+  student                 Student  @relation(fields: [studentId], references: [id])
+  studentId               String
+  subject                 Subject  @relation(fields: [subjectId], references: [id])
+  subjectId               String
+  teacher                 User     @relation(fields: [teacherId], references: [id])
+  teacherId               String
+  catMarks                Float    @default(0)
+  examMarks               Float    @default(0)
+  formativeAssessment     Float    @default(0)
+  comprehensiveAssessment Float    @default(0)
+  practicalAssessment     Float    @default(0)
+  summativeAssessment     Float    @default(0)
+  totalMarks              Float    @default(0)
+  averageMarks            Float    @default(0)
+  competencyStatus        String   @default("Not Yet Competent")
+  grade                   String   @default("F")
+  term                    String
+  year                    Int
+  academicYear            String   @default("")
+  school_id               String   @default("default-school")
+  createdAt               DateTime @default(now())
+
+  @@unique([studentId, subjectId, term, year])
+}
+
+model GeneratorSettings {
+  id              String   @id @default("default")
+  periodsPerDay   Int      @default(8)
+  breakStartTime  String   @default("10:30")
+  breakDuration   Int      @default(30)
+  lunchStartTime  String   @default("13:00")
+  lunchDuration   Int      @default(60)
+  updatedAt       DateTime @updatedAt
+}
+
+model SchoolBranding {
+  school_id     String   @id
+  logo_url      String?  // base64 logo string
+  primary_color String   @default("#022e66")
+  updatedAt     DateTime @updatedAt
+}
+

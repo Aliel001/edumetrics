@@ -1,0 +1,8 @@
+{
+  "name": "Edumetric",
+  "description": "An intelligent school management platform with automatic timetable generation, report management, and academic tracking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
