@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../lib/api';
 import { toast } from 'react-hot-toast';
+import { useAuth } from '../../context/AuthContext';
 import { 
   Plus, 
   Trash2, 
@@ -23,6 +24,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 export default function TimetableManager() {
+  const { academicYear } = useAuth();
   const navigate = useNavigate();
   const [timetable, setTimetable] = useState<any[]>([]);
   const [timeSlots, setTimeSlots] = useState<any[]>([]);
@@ -182,9 +184,10 @@ All metrics should be above zero for the Intelligent Generator to function flawl
     setGenerating(true);
     const toastId = toast.loading('Intelligent engine is optimizing your schedule...');
     try {
+      const formattedYear = academicYear.includes('/') ? academicYear : `${academicYear}/${parseInt(academicYear) + 1}`;
       const res = await api.post('/timetable/auto-generate', { 
         clearExisting,
-        academicYear: '2023/24'
+        academicYear: formattedYear
       });
       
       if (res.data.success) {

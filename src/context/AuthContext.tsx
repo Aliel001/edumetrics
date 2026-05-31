@@ -74,7 +74,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
   const [academicYear, setAcademicYearState] = useState<string>(() => {
-    return localStorage.getItem('academic_year') || '2026';
+    return localStorage.getItem('academic_year') || new Date().getFullYear().toString();
   });
 
   const [branding, setBranding] = useState<SchoolBranding | null>(() => {

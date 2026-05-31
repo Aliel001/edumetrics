@@ -18,7 +18,7 @@ import autoTable from 'jspdf-autotable';
 import { toast } from 'react-hot-toast';
 
 export default function Timetables() {
-  const { user } = useAuth();
+  const { user, academicYear } = useAuth();
   const [timetable, setTimetable] = useState<any[]>([]);
   const [timeSlots, setTimeSlots] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -194,7 +194,8 @@ export default function Timetables() {
           <p className="text-slate-500">
             {user?.role === 'teacher' && filterId === user.id 
               ? `Personal academic overview for ${user.fullname}` 
-              : 'Weekly operational visualization for educational activities'}
+              : 'Weekly operational visualization for educational activities'}{' '}
+            — Active Filter: <span className="font-semibold text-logo-600">AY {academicYear}/{parseInt(academicYear)+1}</span>
           </p>
         </div>
         <div className="flex flex-wrap gap-3">

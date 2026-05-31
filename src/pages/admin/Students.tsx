@@ -2,8 +2,10 @@ import React, { useEffect, useState } from 'react';
 import api from '../../lib/api';
 import { toast } from 'react-hot-toast';
 import { Plus, Search, Trash2, Edit2, Loader2, GraduationCap } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 
 export default function Students() {
+  const { academicYear } = useAuth();
   const [students, setStudents] = useState<any[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,7 +88,13 @@ export default function Students() {
       (s.firstname || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (s.lastname || '').toLowerCase().includes(searchQuery.toLowerCase());
     const matchesClass = !classFilter || s.classId === classFilter;
-    return matchesSearch && matchesClass;
+    
+    // Filter by academic year (students registered on or before selected academic year are active)
+    const enrollYear = new Date(s.createdAt).getFullYear();
+    const selectedYearInt = parseInt(academicYear);
+    const matchesYear = isNaN(selectedYearInt) || enrollYear <= selectedYearInt;
+    
+    return matchesSearch && matchesClass && matchesYear;
   }) : [];
 
   return (
@@ -94,7 +102,9 @@ export default function Students() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-900">Manage Students</h2>
-          <p className="text-slate-500">Register new students and assign to classes</p>
+          <p className="text-slate-500">
+            Viewing student body for Academic Year <span className="font-bold text-logo-600">{academicYear}/{parseInt(academicYear) + 1}</span>
+          </p>
         </div>
         <button 
           onClick={() => {

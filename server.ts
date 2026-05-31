@@ -28,8 +28,42 @@ declare global {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+import fs from 'fs';
+
+// Dynamic SQLite database setup to handle read-only hosting platforms like Vercel Serverless
+let dbUrl = process.env.DATABASE_URL;
+if (!dbUrl) {
+  const isVercel = !!process.env.VERCEL || !!process.env.NOW_BUILDER;
+  if (isVercel) {
+    const srcDb = path.join(process.cwd(), 'prisma', 'dev.db');
+    const tmpDb = path.join('/tmp', 'dev.db');
+    try {
+      if (fs.existsSync(srcDb)) {
+        if (!fs.existsSync(tmpDb)) {
+          fs.copyFileSync(srcDb, tmpDb);
+          console.log('Database successfully copied to writable /tmp/dev.db location for Serverless environments.');
+        } else {
+          console.log('Using existing /tmp/dev.db database file.');
+        }
+      } else {
+        console.warn('Source database dev.db not found at:', srcDb);
+      }
+    } catch (err) {
+      console.error('Error copying dev.db to /tmp:', err);
+    }
+    dbUrl = `file:${tmpDb}`;
+  } else {
+    dbUrl = `file:${path.resolve('prisma/dev.db')}`;
+  }
+}
+
 const prisma = new PrismaClient({
   log: ['error', 'warn'],
+  datasources: {
+    db: {
+      url: dbUrl,
+    },
+  },
 });
 
 const JWT_SECRET = process.env.JWT_SECRET || 'edumetric-secret-key-2024';

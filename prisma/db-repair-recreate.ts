@@ -4,9 +4,14 @@ import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
-const DB_PATH = path.resolve('prisma/dev.db');
-const WAL_PATH = path.resolve('prisma/dev.db-wal');
-const SHM_PATH = path.resolve('prisma/dev.db-shm');
+const isVercel = !!process.env.VERCEL || !!process.env.NOW_BUILDER;
+const DB_PATH = isVercel ? '/tmp/dev.db' : path.resolve('prisma/dev.db');
+const WAL_PATH = isVercel ? '/tmp/dev.db-wal' : path.resolve('prisma/dev.db-wal');
+const SHM_PATH = isVercel ? '/tmp/dev.db-shm' : path.resolve('prisma/dev.db-shm');
+
+if (isVercel && !process.env.DATABASE_URL) {
+  process.env.DATABASE_URL = `file:${DB_PATH}`;
+}
 
 interface BackupData {
   users: any[];
