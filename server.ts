@@ -94,7 +94,7 @@ async function runDatabaseRepair() {
   }
 }
 
-const app = express();
+export const app = express();
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 app.use(cors());
@@ -2130,7 +2130,9 @@ async function seedAdmin() {
   }
 }
 
-async function startServer() {
+let initPromise: Promise<void> | null = null;
+
+async function doInitialization() {
   let isDbHealthy = false;
   try {
     const dbUrl = process.env.DATABASE_URL;
@@ -2174,6 +2176,31 @@ async function startServer() {
       console.error('Failed to run startup seeds/recalculation:', err.message || err);
     }
   }
+}
+
+// Global initialization function that gets triggered either immediately or on first request
+export function ensureInitialized(): Promise<void> {
+  if (!initPromise) {
+    initPromise = doInitialization();
+  }
+  return initPromise;
+}
+
+// Add middleware to guarantee that DB is ready before handling any api route
+app.use(async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    await ensureInitialized();
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
+
+async function startServer() {
+  // Trigger initialization in background
+  ensureInitialized().catch((err) => {
+    console.error('Background database initialization failed:', err);
+  });
 
   // Global Error Handler for SQLite Connection/Malformed errors
   app.use((err: any, req: Request, res: Response, next: NextFunction) => {
@@ -2197,24 +2224,27 @@ async function startServer() {
     next(err);
   });
 
-  if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.resolve(__dirname, 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.resolve(distPath, 'index.html'));
+  const isVercel = !!process.env.VERCEL || !!process.env.NOW_BUILDER;
+  if (!isVercel) {
+    if (process.env.NODE_ENV !== 'production') {
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: 'spa',
+      });
+      app.use(vite.middlewares);
+    } else {
+      const distPath = path.resolve(__dirname, 'dist');
+      app.use(express.static(distPath));
+      app.get('*', (req, res) => {
+        res.sendFile(path.resolve(distPath, 'index.html'));
+      });
+    }
+
+    const PORT = 3000;
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Server running at http://localhost:${PORT}`);
     });
   }
-
-  const PORT = 3000;
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running at http://localhost:${PORT}`);
-  });
 }
 
 startServer();
