@@ -2,7 +2,14 @@ import { PrismaClient } from '@prisma/client';
 import fs from 'fs';
 import path from 'path';
 
-const prisma = new PrismaClient();
+let prismaClient: PrismaClient | null = null;
+function getPrisma(): PrismaClient {
+  if (!prismaClient) {
+    prismaClient = new PrismaClient();
+  }
+  return prismaClient;
+}
+
 const BACKUP_PATH = path.resolve('prisma/backup.json');
 
 let backupTimeout: NodeJS.Timeout | null = null;
@@ -15,6 +22,7 @@ export async function autoBackupDatabase() {
   if (isBackingUp) return;
   isBackingUp = true;
   try {
+    const prisma = getPrisma();
     const backupData = {
       users: await prisma.user.findMany(),
       classes: await prisma.class.findMany(),

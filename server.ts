@@ -1,103 +1,11 @@
+import './env-init';
 import dotenv from 'dotenv';
-const envConfig = dotenv.config();
-if (envConfig.parsed) {
-  // Force override system env vars with .env file values
-  Object.assign(process.env, envConfig.parsed);
-}
-
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-// Recursive search for the database file inside the serverless execution directory
-function findFileRecursive(dir: string, fileName: string, maxDepth: number = 4): string | null {
-  try {
-    const files = fs.readdirSync(dir);
-    for (const file of files) {
-      if (file === 'node_modules' || file === '.git' || file === '.vercel' || file === 'dist' || file === 'tmp') {
-        continue;
-      }
-      const fullPath = path.join(dir, file);
-      try {
-        const stat = fs.statSync(fullPath);
-        if (stat.isDirectory()) {
-          if (maxDepth > 0) {
-            const found = findFileRecursive(fullPath, fileName, maxDepth - 1);
-            if (found) return found;
-          }
-        } else if (file === fileName) {
-          return fullPath;
-        }
-      } catch (e) {}
-    }
-  } catch (e) {}
-  return null;
-}
-
-// Dynamic SQLite database setup to handle read-only hosting platforms like Vercel Serverless
-// We set process.env.DATABASE_URL immediately, so ANY module dynamically importing or creating PrismaClient
-// inherits this configuration and accesses the writable /tmp directory.
-if (!process.env.DATABASE_URL) {
-  const isVercel = !!process.env.VERCEL || !!process.env.NOW_BUILDER;
-  if (isVercel) {
-    const tmpDb = path.join('/tmp', 'dev.db');
-    
-    // Find the source database file from multiple possible paths
-    const possiblePaths = [
-      path.resolve('prisma/dev.db'),
-      path.join(process.cwd(), 'prisma', 'dev.db'),
-      path.join(__dirname, 'prisma', 'dev.db'),
-      path.join(__dirname, '..', 'prisma', 'dev.db'),
-    ];
-    
-    let srcDb = null;
-    for (const p of possiblePaths) {
-      if (fs.existsSync(p)) {
-        srcDb = p;
-        break;
-      }
-    }
-
-    if (!srcDb) {
-      // Robust recursive search as fallback
-      srcDb = findFileRecursive(process.cwd(), 'dev.db');
-      if (!srcDb) {
-        srcDb = findFileRecursive(path.resolve(__dirname, '..'), 'dev.db');
-      }
-    }
-
-    if (srcDb) {
-      try {
-        if (!fs.existsSync(tmpDb)) {
-          fs.copyFileSync(srcDb, tmpDb);
-          console.log(`Database successfully copied from ${srcDb} to writable ${tmpDb} location for Serverless environments.`);
-          
-          // Also try copying auxiliary SQLite files if they exist
-          const srcWal = srcDb + '-wal';
-          const srcShm = srcDb + '-shm';
-          if (fs.existsSync(srcWal)) {
-            try { fs.copyFileSync(srcWal, tmpDb + '-wal'); } catch (e) {}
-          }
-          if (fs.existsSync(srcShm)) {
-            try { fs.copyFileSync(srcShm, tmpDb + '-shm'); } catch (e) {}
-          }
-        } else {
-          console.log(`Using existing ${tmpDb} database file.`);
-        }
-      } catch (err) {
-        console.error('Error copying dev.db to /tmp:', err);
-      }
-    } else {
-      console.warn('Source database dev.db not found in any of the expected locations or recursive searches:', possiblePaths);
-    }
-    process.env.DATABASE_URL = `file:${tmpDb}`;
-  } else {
-    process.env.DATABASE_URL = `file:${path.resolve('prisma/dev.db')}`;
-  }
-}
 
 import { PrismaClient } from '@prisma/client';
 import { execSync } from 'child_process';
@@ -2197,6 +2105,64 @@ async function seedAdmin() {
 let initPromise: Promise<void> | null = null;
 
 async function doInitialization() {
+  const isVercel = !!process.env.VERCEL || !!process.env.NOW_BUILDER;
+  
+  if (isVercel) {
+    console.log('🔍 [Vercel Serverless Initialization] Confirming /tmp read/write permissions...');
+    const tmpDir = '/tmp';
+    try {
+      const testFilePath = path.join(tmpDir, `init_write_test_${Date.now()}.txt`);
+      fs.writeFileSync(testFilePath, 'init-test-write');
+      const readVal = fs.readFileSync(testFilePath, 'utf8');
+      if (readVal !== 'init-test-write') {
+        throw new Error('Read back content was of unexpected value.');
+      }
+      fs.unlinkSync(testFilePath);
+      console.log('✅ [Vercel Serverless] Correctly verified read/write permissions on /tmp.');
+    } catch (err: any) {
+      console.error('❌ [Vercel Serverless] CRITICAL: /tmp directory read/write test failed:', err.message);
+      throw new Error(`CRITICAL PERMISSION ERROR: Unable to read/write in /tmp directory: ${err.message}`);
+    }
+
+    // Force checking that the copied DB file exists in /tmp and is non-empty
+    const tmpDbPath = path.join(tmpDir, 'dev.db');
+    if (!fs.existsSync(tmpDbPath)) {
+      console.warn(`⚠️ [Vercel Serverless] Expected database file at ${tmpDbPath} does not exist. Attempting manual fallback replication...`);
+      const possibleSources = [
+        path.resolve('prisma/dev.db'),
+        path.join(process.cwd(), 'prisma', 'dev.db'),
+        path.join(__dirname, 'prisma', 'dev.db'),
+        path.join(__dirname, '..', 'prisma', 'dev.db'),
+      ];
+      let foundSource = null;
+      for (const src of possibleSources) {
+        if (fs.existsSync(src)) {
+          foundSource = src;
+          break;
+        }
+      }
+      if (foundSource) {
+        try {
+          fs.copyFileSync(foundSource, tmpDbPath);
+          console.log(`✅ [Vercel Serverless] Successfully copied database from ${foundSource} to ${tmpDbPath}.`);
+          
+          const srcWal = foundSource + '-wal';
+          const srcShm = foundSource + '-shm';
+          if (fs.existsSync(srcWal)) {
+            try { fs.copyFileSync(srcWal, tmpDbPath + '-wal'); } catch (e) {}
+          }
+          if (fs.existsSync(srcShm)) {
+            try { fs.copyFileSync(srcShm, tmpDbPath + '-shm'); } catch (e) {}
+          }
+        } catch (copyErr: any) {
+          console.error(`❌ [Vercel Serverless] Failed to copy database manually: ${copyErr.message}`);
+        }
+      } else {
+        console.error('❌ [Vercel Serverless] Could not find any source database in expected locations.');
+      }
+    }
+  }
+
   let isDbHealthy = false;
   try {
     const dbUrl = process.env.DATABASE_URL;
@@ -2210,15 +2176,68 @@ async function doInitialization() {
     console.log('Database connected and verified healthy on startup.');
   } catch (error: any) {
     console.error('🚨 SQLite database connection failed or table verification failed on startup:', error.message || error);
-    console.log('🔄 Resolving startup database error with automated repair and recovery...');
-    await runDatabaseRepair();
-    try {
-      await prisma.$connect();
-      await prisma.weekday.count();
-      isDbHealthy = true;
-      console.log('🔋 Database successfully restored, connected and verified healthy after auto-repair.');
-    } catch (retryError: any) {
-      console.error('❌ CRITICAL: Failed to connect/verify database even after repair:', retryError.message || retryError);
+    
+    if (isVercel) {
+      console.log('🔄 [Vercel Serverless] Automated self-healing database replacement triggered...');
+      const tmpDbPath = path.join('/tmp', 'dev.db');
+      try {
+        if (fs.existsSync(tmpDbPath)) {
+          console.log(`🗑️ Removing possibly corrupted or malformed database file at ${tmpDbPath}...`);
+          fs.unlinkSync(tmpDbPath);
+          // Also try unlinking auxiliary files
+          try { fs.unlinkSync(tmpDbPath + '-wal'); } catch (e) {}
+          try { fs.unlinkSync(tmpDbPath + '-shm'); } catch (e) {}
+        }
+        
+        // Find source database and copy again
+        const possibleSources = [
+          path.resolve('prisma/dev.db'),
+          path.join(process.cwd(), 'prisma', 'dev.db'),
+          path.join(__dirname, 'prisma', 'dev.db'),
+          path.join(__dirname, '..', 'prisma', 'dev.db'),
+        ];
+        let foundSource = null;
+        for (const src of possibleSources) {
+          if (fs.existsSync(src)) {
+            foundSource = src;
+            break;
+          }
+        }
+        if (foundSource) {
+          fs.copyFileSync(foundSource, tmpDbPath);
+          console.log(`✅ Re-copied database successfully from ${foundSource} to ${tmpDbPath}.`);
+          
+          const srcWal = foundSource + '-wal';
+          const srcShm = foundSource + '-shm';
+          if (fs.existsSync(srcWal)) {
+            try { fs.copyFileSync(srcWal, tmpDbPath + '-wal'); } catch (e) {}
+          }
+          if (fs.existsSync(srcShm)) {
+            try { fs.copyFileSync(srcShm, tmpDbPath + '-shm'); } catch (e) {}
+          }
+          
+          // Re-attempt Prisma connection
+          await prisma.$connect();
+          await prisma.weekday.count();
+          isDbHealthy = true;
+          console.log('🔋 Database successfully restored and verified healthy on retry.');
+        } else {
+          console.error('❌ Could not find source database path to copy from.');
+        }
+      } catch (recoveryErr: any) {
+        console.error('❌ Critical failure trying to auto-recover SQLite database:', recoveryErr.message || recoveryErr);
+      }
+    } else {
+      console.log('🔄 Resolving startup database error with automated repair and recovery...');
+      await runDatabaseRepair();
+      try {
+        await prisma.$connect();
+        await prisma.weekday.count();
+        isDbHealthy = true;
+        console.log('🔋 Database successfully restored, connected and verified healthy after auto-repair.');
+      } catch (retryError: any) {
+        console.error('❌ CRITICAL: Failed to connect/verify database even after repair:', retryError.message || retryError);
+      }
     }
   }
 
