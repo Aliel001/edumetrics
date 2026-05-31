@@ -26,6 +26,7 @@ import api from './lib/api';
 // Pages
 import AdminSetup from './pages/AdminSetup';
 import Login from './pages/Login';
+import ResetPassword from './pages/ResetPassword';
 import Dashboard from './pages/Dashboard';
 import Teachers from './pages/admin/Teachers';
 import Classes from './pages/admin/Classes';
@@ -62,10 +63,14 @@ const BrandingRouteGuard = ({ children }: { children: React.ReactNode }) => {
   const { user, branding, refreshBranding } = useAuth();
   const [isVerifying, setIsVerifying] = React.useState(true);
 
+  const userId = user?.id;
+  const hasBranding = !!branding;
+
   React.useEffect(() => {
     let isMounted = true;
     const verify = async () => {
-      if (user) {
+      // Only request from the API if branding is not already loaded
+      if (userId && !hasBranding) {
         try {
           await refreshBranding();
         } catch (err) {
@@ -80,7 +85,7 @@ const BrandingRouteGuard = ({ children }: { children: React.ReactNode }) => {
     return () => {
       isMounted = false;
     };
-  }, [user, refreshBranding]);
+  }, [userId, hasBranding, refreshBranding]);
 
   if (isVerifying) {
     return <LoadingScreen />;
@@ -275,7 +280,7 @@ export default function App() {
   }
 
   // Secure: Redirect to Admin Setup on missing admin
-  if (!adminExists && location.pathname !== '/admin-setup') {
+  if (!adminExists && location.pathname !== '/admin-setup' && location.pathname !== '/reset-password') {
     return <Navigate to="/admin-setup" replace />;
   }
 
@@ -290,6 +295,7 @@ export default function App() {
       <Routes>
         <Route path="/admin-setup" element={<AdminSetup />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         
         <Route path="/*" element={

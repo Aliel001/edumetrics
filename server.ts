@@ -14,6 +14,8 @@ import { createServer as createViteServer } from 'vite';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import cors from 'cors';
+import { sendTeacherInviteEmail, sendTeacherCredentialsEmail } from './server-mailer';
+import { triggerBackup } from './server-backup';
 
 declare global {
   namespace Express {
@@ -31,6 +33,17 @@ const prisma = new PrismaClient({
 });
 
 const JWT_SECRET = process.env.JWT_SECRET || 'edumetric-secret-key-2024';
+
+function getSchoolNameFromId(schoolId: string): string {
+  if (!schoolId || schoolId === 'default-school') return 'EduMetric School';
+  // Remove trailing random 4-digit number
+  let namePart = schoolId.replace(/-\d{4}$/, '');
+  // Capitalize each part
+  return namePart
+    .split('-')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
 
 let isRepairing = false;
 
@@ -65,6 +78,16 @@ app.use((req: Request, res: Response, next: NextFunction) => {
     });
     return;
   }
+  next();
+});
+
+// Auto-backup on successful mutations (POST, PUT, DELETE)
+app.use((req: Request, res: Response, next: NextFunction) => {
+  res.on('finish', () => {
+    if (['POST', 'PUT', 'DELETE'].includes(req.method) && res.statusCode >= 200 && res.statusCode < 350) {
+      triggerBackup();
+    }
+  });
   next();
 });
 
@@ -204,7 +227,7 @@ const authenticateToken = (req: any, res: Response, next: NextFunction) => {
 
   jwt.verify(token, JWT_SECRET, (err: any, user: any) => {
     if (err) return res.status(403).json({ message: 'Invalid token' });
-    req.user = user;
+    req.user = user ? { ...user, school_id: user.school_id || 'default-school' } : user;
     next();
   });
 };
@@ -344,6 +367,12 @@ app.post('/api/auth/login', async (req, res) => {
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) return res.status(404).json({ message: 'User not found' });
 
+    if (user.isVerified === false) {
+      return res.status(403).json({ 
+        message: 'Account inactive. You must verify and activate your email address before accessing this system. Please check your inbox for the validation email.' 
+      });
+    }
+
     const validPassword = await bcrypt.compare(password, user.password);
     if (!validPassword) return res.status(400).json({ message: 'Invalid password' });
 
@@ -355,6 +384,185 @@ app.post('/api/auth/login', async (req, res) => {
     res.json({ token, user: { id: user.id, email: user.email, role: user.role, fullname: user.fullname, school_id: user.school_id } });
   } catch (error) {
     res.status(500).json({ message: 'Login failed' });
+  }
+});
+
+// Verify a password reset/activation token
+app.post('/api/auth/verify-token', async (req, res) => {
+  const { token } = req.body;
+  if (!token) {
+    return res.status(400).json({ message: 'Token is required' });
+  }
+
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    if (decoded.action !== 'setup-password') {
+      return res.status(400).json({ message: 'Invalid token action.' });
+    }
+
+    // Find user to confirm they exist
+    const user = await prisma.user.findUnique({ where: { email: decoded.email } });
+    if (!user) {
+      return res.status(404).json({ message: 'User associated with this token no longer exists.' });
+    }
+
+    // Unslugify school_id for user context/presentation
+    const schoolName = getSchoolNameFromId(user.school_id);
+
+    // Fetch school branding details to support logo rendering in verification page
+    const branding = await prisma.schoolBranding.findUnique({
+      where: { school_id: user.school_id }
+    });
+
+    res.json({
+      fullname: user.fullname,
+      email: user.email,
+      schoolName,
+      logoUrl: branding?.logo_url || null
+    });
+  } catch (error: any) {
+    console.error('Verify token failed:', error);
+    res.status(400).json({ message: 'Token has expired or is invalid.' });
+  }
+});
+
+// Configure new password using the verified token
+app.post('/api/auth/setup-password', async (req, res) => {
+  const { token, password } = req.body;
+  if (!token || !password) {
+    return res.status(400).json({ message: 'Token and password are required' });
+  }
+
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    if (decoded.action !== 'setup-password') {
+      return res.status(400).json({ message: 'Invalid token action.' });
+    }
+
+    const user = await prisma.user.findUnique({ where: { email: decoded.email } });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    // Set the new hashed password
+    const hashPassword = await bcrypt.hash(password, 10);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { password: hashPassword }
+    });
+
+    res.json({ success: true, message: 'Password has been updated and activated.' });
+  } catch (error: any) {
+    console.error('Set password via token failed:', error);
+    res.status(400).json({ message: 'Failed to verify secure token.' });
+  }
+});
+
+// GET endpoint to verify teacher email from the activation email link
+app.get('/api/auth/verify-email', async (req, res) => {
+  const { token } = req.query;
+  if (!token) {
+    return res.status(400).send(`
+      <html>
+        <body style="font-family: -apple-system, sans-serif; text-align: center; padding-top: 60px; background-color: #f7fafc;">
+          <div style="max-width: 500px; margin: 0 auto; padding: 40px; border: 1px solid #e2e8f0; border-radius: 12px; background: white; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+            <h1 style="color: #e53e3e; font-size: 24px; margin-bottom: 16px;">Verification Error</h1>
+            <p style="color: #4a5568; line-height: 1.6;">A secure verification token query parameter is required to activate your profile.</p>
+            <a href="/login" style="display: inline-block; margin-top: 24px; padding: 10px 20px; background-color: #3182ce; color: white; text-decoration: none; border-radius: 6px; font-weight: bold;">Return to Login</a>
+          </div>
+        </body>
+      </html>
+    `);
+  }
+
+  try {
+    const decoded: any = jwt.verify(token as string, JWT_SECRET);
+    if (decoded.action !== 'verify-email') {
+      return res.status(400).send(`
+        <html>
+          <body style="font-family: -apple-system, sans-serif; text-align: center; padding-top: 60px; background-color: #f7fafc;">
+            <div style="max-width: 500px; margin: 0 auto; padding: 40px; border: 1px solid #e2e8f0; border-radius: 12px; background: white; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+              <h1 style="color: #e53e3e; font-size: 24px; margin-bottom: 16px;">Invalid Action</h1>
+              <p style="color: #4a5568; line-height: 1.6;">The provided secure token is not configured for email verification actions.</p>
+              <a href="/login" style="display: inline-block; margin-top: 24px; padding: 10px 20px; background-color: #3182ce; color: white; text-decoration: none; border-radius: 6px; font-weight: bold;">Return to Login</a>
+            </div>
+          </body>
+        </html>
+      `);
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: decoded.id } });
+    if (!user) {
+      return res.status(404).send(`
+        <html>
+          <body style="font-family: -apple-system, sans-serif; text-align: center; padding-top: 60px; background-color: #f7fafc;">
+            <div style="max-width: 500px; margin: 0 auto; padding: 40px; border: 1px solid #e2e8f0; border-radius: 12px; background: white; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+              <h1 style="color: #e53e3e; font-size: 24px; margin-bottom: 16px;">User Account Not Found</h1>
+              <p style="color: #4a5568; line-height: 1.6;">The user associated with this verification link does not exist anymore in the system database.</p>
+              <a href="/login" style="display: inline-block; margin-top: 24px; padding: 10px 20px; background-color: #3182ce; color: white; text-decoration: none; border-radius: 6px; font-weight: bold;">Return to Login</a>
+            </div>
+          </body>
+        </html>
+      `);
+    }
+
+    if (user.isVerified) {
+      return res.send(`
+        <html>
+          <body style="font-family: -apple-system, sans-serif; text-align: center; padding-top: 60px; background-color: #f7fafc;">
+            <div style="max-width: 500px; margin: 0 auto; padding: 40px; border: 1px solid #e2e8f0; border-radius: 12px; background: white; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+              <h1 style="color: #2b6cb0; font-size: 24px; margin-bottom: 16px;">Already Verified</h1>
+              <p style="color: #4a5568; line-height: 1.6;">Your teacher account handles is already verified and active! You can proceed to log in directly.</p>
+              <a href="/login" style="display: inline-block; margin-top: 24px; padding: 10px 20px; background-color: #3182ce; color: white; text-decoration: none; border-radius: 6px; font-weight: bold;">Log In Now</a>
+            </div>
+          </body>
+        </html>
+      `);
+    }
+
+    // Mark email as verified
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { isVerified: true }
+    });
+
+    try {
+      if (typeof triggerBackup === 'function') {
+        triggerBackup();
+      }
+    } catch (_) {}
+
+    return res.send(`
+      <html>
+        <body style="font-family: -apple-system, sans-serif; text-align: center; padding-top: 60px; background-color: #f7fafc;">
+          <div style="max-width: 500px; margin: 0 auto; padding: 40px; border: 1px solid #cbd5e0; border-radius: 12px; background: white; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);">
+            <div style="display: inline-block; background-color: #def7ec; color: #03543f; padding: 12px; border-radius: 50%; margin-bottom: 16px;">
+              <svg style="width: 32px; height: 32px;" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/1000/svg">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+              </svg>
+            </div>
+            <h1 style="color: #0e9f6e; font-size: 26px; margin-top: 0; margin-bottom: 12px; font-weight: bold;">✓ Verification Successful!</h1>
+            <p style="color: #4b5563; font-size: 15px; line-height: 1.6; margin-bottom: 24px;">Thank you. Your email address <strong>${user.email}</strong> has been successfully verified, and your teacher account profile is now <strong>active</strong>.</p>
+            <p style="color: #4b5563; font-size: 14px; margin-bottom: 24px;">You can now log into the portal using the login credentials provided in your registration email.</p>
+            <a href="/login?verified=true" style="display: inline-block; padding: 12px 28px; background-color: #10b981; color: white; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 15px; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.2);">Go to Login Portal</a>
+          </div>
+        </body>
+      </html>
+    `);
+  } catch (err: any) {
+    console.error('Email verification error:', err);
+    return res.status(400).send(`
+      <html>
+        <body style="font-family: -apple-system, sans-serif; text-align: center; padding-top: 60px; background-color: #f7fafc;">
+          <div style="max-width: 500px; margin: 0 auto; padding: 40px; border: 1px solid #fed7d7; border-radius: 12px; background: white; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+            <h1 style="color: #e53e3e; font-size: 24px; margin-bottom: 16px;">Link Expired or Invalid</h1>
+            <p style="color: #4a5568; line-height: 1.6;">The activation or verification link is invalid, malformed, or has expired after 48 hours.</p>
+            <p style="color: #718096; font-size: 13px; margin-top: 8px;">Please contact your school administrator to request a new invitation.</p>
+            <a href="/login" style="display: inline-block; margin-top: 24px; color: #3182ce; text-decoration: underline; font-weight: 500;">Back to Login</a>
+          </div>
+        </body>
+      </html>
+    `);
   }
 });
 
@@ -399,10 +607,42 @@ app.post('/api/teachers', authenticateToken, isAdmin, async (req, res) => {
         email: email.trim().toLowerCase(), 
         password: hashPassword, 
         role: role || 'teacher',
-        school_id: req.user.school_id
+        school_id: req.user.school_id,
+        isVerified: false
       }
     });
-    res.json({ id: user.id, fullname: user.fullname, email: user.email, role: user.role });
+
+    const baseUrl = req.headers.origin || process.env.APP_URL || 'http://localhost:3000';
+    
+    // Generate secure validation token
+    const verificationToken = jwt.sign(
+      { id: user.id, email: user.email, action: 'verify-email' },
+      JWT_SECRET,
+      { expiresIn: '48h' }
+    );
+
+    const verifyUrl = `${baseUrl}/api/auth/verify-email?token=${verificationToken}`;
+    const loginUrl = `${baseUrl}/login`;
+    const schoolName = getSchoolNameFromId(user.school_id);
+
+    const emailResult = await sendTeacherCredentialsEmail({
+      email: user.email,
+      fullname: user.fullname,
+      schoolName,
+      clearPassword: password,
+      creatorName: req.user.fullname || 'Administrator',
+      loginUrl,
+      verifyUrl
+    });
+
+    res.json({ 
+      id: user.id, 
+      fullname: user.fullname, 
+      email: user.email, 
+      role: user.role, 
+      emailSent: emailResult.success,
+      previewUrl: emailResult.previewUrl || null
+    });
   } catch (error: any) {
     console.error('Failed to create teacher:', error);
     res.status(500).json({ message: 'Failed to create teacher account. Please make sure the email is unique.' });
@@ -1345,6 +1585,33 @@ app.delete('/api/time-slots/:id', authenticateToken, isDosOrAdmin, async (req, r
 });
 
 // Timetable Entries
+
+// Timetable Business Rules Configuration
+// To make it configurable and easily editable, we define a declarative rules structure.
+export interface TimetableFreeSlotRule {
+  dayName: string;
+  isFreeSlot: (slotIndex: number, totalSlotsCount: number) => boolean;
+}
+
+export const TIMETABLE_FREE_SLOT_RULES: TimetableFreeSlotRule[] = [
+  {
+    dayName: 'Wednesday',
+    isFreeSlot: (slotIndex: number, totalSlotsCount: number) => {
+      // Free slots are defined as the last 3 periods/slots of the instructional day
+      return slotIndex >= totalSlotsCount - 3;
+    }
+  }
+];
+
+export function isSlotReservedFree(dayName: string, slotIndex: number, totalSlotsCount: number): boolean {
+  if (!dayName) return false;
+  const rule = TIMETABLE_FREE_SLOT_RULES.find(
+    r => r.dayName.toLowerCase() === dayName.toLowerCase()
+  );
+  if (!rule) return false;
+  return rule.isFreeSlot(slotIndex, totalSlotsCount);
+}
+
 app.get('/api/timetable', authenticateToken, async (req, res) => {
   const { classId, teacherId } = req.query;
   const where: any = {};
@@ -1367,6 +1634,26 @@ app.post('/api/timetable', authenticateToken, isDosOrAdmin, async (req, res) => 
   });
   if (slot && (slot.slotType === 'break' || slot.slotType === 'lunch' || slot.slotType === 'Break' || slot.slotType === 'Lunch')) {
     return res.status(400).json({ message: "Cannot schedule during a break or lunch slot." });
+  }
+
+  // 1b. Check configurable Timetable business rules (e.g., Wednesday last 3 slots are reserved as FREE)
+  const weekday = await prisma.weekday.findUnique({
+    where: { id: weekdayId }
+  });
+  if (weekday) {
+    const settings = await prisma.generatorSettings.findUnique({ where: { id: 'default' } });
+    const maxPeriods = settings?.periodsPerDay || 8;
+    const activeSlots = await prisma.timeSlot.findMany({ 
+      where: { slotType: { in: ['class', 'Class'] } },
+      orderBy: { startTime: 'asc' } 
+    }).then(slots => slots.slice(0, maxPeriods));
+    
+    const slotIdx = activeSlots.findIndex(s => s.id === timeSlotId);
+    if (slotIdx !== -1 && isSlotReservedFree(weekday.dayName, slotIdx, activeSlots.length)) {
+      return res.status(400).json({ 
+        message: "Wednesday (Kuwa 3) last 3 periods are reserved as FREE blocks. Scheduling lessons is forbidden." 
+      });
+    }
   }
 
   // 2. Exact duplicate entry check
@@ -1417,6 +1704,26 @@ app.put('/api/timetable/:id', authenticateToken, isDosOrAdmin, async (req, res) 
   });
   if (slot && (slot.slotType === 'break' || slot.slotType === 'lunch' || slot.slotType === 'Break' || slot.slotType === 'Lunch')) {
     return res.status(400).json({ message: "Cannot schedule during a break or lunch slot." });
+  }
+
+  // 1b. Check configurable Timetable business rules (e.g., Wednesday last 3 slots are reserved as FREE)
+  const weekday = await prisma.weekday.findUnique({
+    where: { id: weekdayId }
+  });
+  if (weekday) {
+    const settings = await prisma.generatorSettings.findUnique({ where: { id: 'default' } });
+    const maxPeriods = settings?.periodsPerDay || 8;
+    const activeSlots = await prisma.timeSlot.findMany({ 
+      where: { slotType: { in: ['class', 'Class'] } },
+      orderBy: { startTime: 'asc' } 
+    }).then(slots => slots.slice(0, maxPeriods));
+    
+    const slotIdx = activeSlots.findIndex(s => s.id === timeSlotId);
+    if (slotIdx !== -1 && isSlotReservedFree(weekday.dayName, slotIdx, activeSlots.length)) {
+      return res.status(400).json({ 
+        message: "Wednesday (Kuwa 3) last 3 periods are reserved as FREE blocks. Scheduling lessons is forbidden." 
+      });
+    }
   }
 
   // 2. Exact duplicate entry check
@@ -1606,6 +1913,12 @@ app.post('/api/timetable/auto-generate', authenticateToken, isDosOrAdmin, async 
         
         for (const slot of shuffledSlots) {
           if (remaining <= 0) break;
+
+          // Check if this slot and weekday combination is reserved as a FREE block per business rules
+          const slotIdx = activeSlots.findIndex(s => s.id === slot.id);
+          if (isSlotReservedFree(day.dayName, slotIdx, activeSlots.length)) {
+            continue; // Bypass and keep this slot FREE
+          }
 
           const tBusyKey = `${day.id}-${slot.id}-${assign.teacherId}`;
           const cBusyKey = `${day.id}-${slot.id}-${assign.classId}`;
@@ -1800,33 +2113,25 @@ async function startServer() {
     isDbHealthy = true;
     console.log('Database connected and verified healthy on startup.');
   } catch (error: any) {
-    const isMalformed = error.message && (
-      error.message.includes('malformed') ||
-      error.message.includes('corrupt') ||
-      error.message.includes('extended_code: 11')
-    );
-    if (isMalformed) {
-      console.error('🚨 SQLite database file is malformed or corrupted on startup!');
-      await runDatabaseRepair();
-      try {
-        await prisma.$connect();
-        await prisma.weekday.count();
-        isDbHealthy = true;
-        console.log('Database connected and verified healthy after auto-repair.');
-      } catch (retryError: any) {
-        console.error('❌ Failed to connect/verify database even after repair:', retryError.message);
-      }
-    } else {
-      console.error('Database connection failed on startup with non-malformation error:', error.message || error);
+    console.error('🚨 SQLite database connection failed or table verification failed on startup:', error.message || error);
+    console.log('🔄 Resolving startup database error with automated repair and recovery...');
+    await runDatabaseRepair();
+    try {
+      await prisma.$connect();
+      await prisma.weekday.count();
+      isDbHealthy = true;
+      console.log('🔋 Database successfully restored, connected and verified healthy after auto-repair.');
+    } catch (retryError: any) {
+      console.error('❌ CRITICAL: Failed to connect/verify database even after repair:', retryError.message || retryError);
     }
   }
 
   if (isDbHealthy) {
     // Apply SQLite DELETE journal optimizations to prevent "database disk image is malformed" and handle concurrency cleanly on Cloud Run
     try {
-      await prisma.$executeRawUnsafe(`PRAGMA journal_mode=DELETE;`);
-      await prisma.$executeRawUnsafe(`PRAGMA synchronous=NORMAL;`);
-      await prisma.$executeRawUnsafe(`PRAGMA busy_timeout=10000;`);
+      await prisma.$queryRawUnsafe(`PRAGMA journal_mode=DELETE;`);
+      await prisma.$queryRawUnsafe(`PRAGMA synchronous=NORMAL;`);
+      await prisma.$queryRawUnsafe(`PRAGMA busy_timeout=10000;`);
       console.log('SQLite optimizations successfully applied: DELETE journal mode configured.');
     } catch (optErr) {
       console.error('Failed to apply database optimizations:', optErr);

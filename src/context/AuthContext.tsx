@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../lib/api';
 
@@ -98,7 +98,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setAcademicYearState(year);
   };
 
-  const refreshBranding = async () => {
+  const refreshBranding = useCallback(async () => {
     try {
       const res = await api.get('/school-branding');
       const brandingData = res.data;
@@ -118,7 +118,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err) {
       console.error('Failed to get school branding info:', err);
     }
-  };
+  }, []);
 
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
@@ -141,8 +141,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => clearTimeout(timer);
   }, []);
 
+  const userId = user?.id;
   useEffect(() => {
-    if (user) {
+    if (userId) {
       refreshBranding();
     } else {
       setBranding(null);
@@ -158,7 +159,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       document.documentElement.style.removeProperty('--color-logo-200');
       document.documentElement.style.removeProperty('--color-logo-500');
     }
-  }, [user]);
+  }, [userId, refreshBranding]);
 
   const login = (token: string, user: User) => {
     localStorage.setItem('token', token);

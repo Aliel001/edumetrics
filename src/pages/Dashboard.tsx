@@ -47,7 +47,7 @@ const StatCard = ({ label, value, icon: Icon, color }: { label: string; value: n
 );
 
 export default function Dashboard() {
-  const { user, academicYear } = useAuth();
+  const { user, academicYear, branding } = useAuth();
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(false);
   const [assignments, setAssignments] = useState<any[]>([]);
@@ -97,8 +97,8 @@ export default function Dashboard() {
     return (
       <div className="space-y-8 animate-fade-in">
         {/* Welcome Banner */}
-        <div className="bg-gradient-to-r from-logo-50 to-logo-50/50 p-8 rounded-2xl border border-logo-100/40 relative overflow-hidden text-left">
-          <div className="relative z-10">
+        <div className="bg-gradient-to-r from-logo-50 to-logo-50/50 p-8 rounded-2xl border border-logo-100/40 relative overflow-hidden text-left flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+          <div className="relative z-10 flex-1">
             <h2 className="text-2xl font-bold text-slate-900">Welcome back, {user.fullname}! 👋</h2>
             <p className="text-slate-500 mt-2 max-w-xl">
               You are signed in as a teacher for Academic Year <span className="font-semibold text-logo-600 font-mono">{formatYearLabel(academicYear)}</span>.
@@ -113,6 +113,14 @@ export default function Dashboard() {
                 View Full Timetable Schedule
               </Link>
             </div>
+          </div>
+          <div className="relative z-10 shrink-0 self-start md:self-auto bg-white p-2.5 rounded-2xl border border-slate-100/80 shadow-xs">
+            <img 
+              src={branding?.logo_url || "/edumetric.png"} 
+              alt="School Logo" 
+              className="w-16 h-16 sm:w-20 sm:h-20 object-contain rounded-xl"
+              referrerPolicy="no-referrer"
+            />
           </div>
           <div className="absolute right-0 bottom-0 opacity-10 p-4 pointer-events-none">
             <GraduationCap size={200} />
@@ -175,13 +183,23 @@ export default function Dashboard() {
     <div className="space-y-8 animate-fade-in text-left">
       {/* Active Academic Year Banner */}
       <div className="bg-gradient-to-r from-logo-50 to-logo-50/50 p-6 rounded-2xl border border-logo-100/40 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-slate-950">
-            Academic Performance Dashboard — {formatYearLabel(academicYear)}
-          </h2>
-          <p className="text-sm text-slate-500 mt-1">
-            Real-time analytics, evaluation records, and teacher events updated live.
-          </p>
+        <div className="flex items-center gap-4">
+          <div className="bg-white p-1.5 rounded-xl border border-slate-100 shadow-xs flex-shrink-0">
+            <img 
+              src={branding?.logo_url || "/edumetric.png"} 
+              alt="School Logo" 
+              className="w-12 h-12 object-contain rounded-lg"
+              referrerPolicy="no-referrer"
+            />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold text-slate-950">
+              Academic Performance Dashboard — {formatYearLabel(academicYear)}
+            </h2>
+            <p className="text-sm text-slate-500 mt-1">
+              Real-time analytics, evaluation records, and teacher events updated live.
+            </p>
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           {user?.role === 'admin' && (

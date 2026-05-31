@@ -16,12 +16,27 @@ interface BackupData {
   weekdays: any[];
   timeSlots: any[];
   generatorSettings: any[];
+  schoolBranding?: any[];
+  teacherAssignment?: any[];
+  timetable?: any[];
+  mark?: any[];
 }
 
 async function tryBackup(): Promise<BackupData | null> {
+  const backupJsonPath = path.resolve('prisma/backup.json');
+  let jsonBackup: BackupData | null = null;
+  if (fs.existsSync(backupJsonPath)) {
+    try {
+      jsonBackup = JSON.parse(fs.readFileSync(backupJsonPath, 'utf-8'));
+      console.log(`✅ Loaded workspace persistent JSON backup with ${jsonBackup?.users?.length || 0} users and ${jsonBackup?.students?.length || 0} students.`);
+    } catch (e: any) {
+      console.warn('⚠️ Failed to load or parse prisma/backup.json:', e.message);
+    }
+  }
+
   if (!fs.existsSync(DB_PATH)) {
-    console.log('ℹ️ No existing database file found. Proceeding with clean initialization.');
-    return null;
+    console.log('ℹ️ No existing database file found. Proceeding with backup.json or clean initialization.');
+    return jsonBackup;
   }
 
   console.log('🔍 Attempting to query and rescue existing data from current database...');
@@ -95,13 +110,26 @@ async function tryBackup(): Promise<BackupData | null> {
     }
 
     await tempPrisma.$disconnect();
+
+    if (jsonBackup) {
+      const liveUserCount = backup.users.length;
+      const jsonUserCount = jsonBackup.users?.length || 0;
+      const liveStudentCount = backup.students.length;
+      const jsonStudentCount = jsonBackup.students?.length || 0;
+
+      if (jsonUserCount > liveUserCount || jsonStudentCount > liveStudentCount) {
+        console.log('📌 Persistent JSON backup has more records than the queried database. Using JSON backup to prevent data loss.');
+        return jsonBackup;
+      }
+    }
+
     return backup;
   } catch (error: any) {
-    console.error('❌ Data rescue extraction failed (database malformed or locked). Falling back of full safe recreation.');
+    console.error('❌ Data rescue extraction failed (database malformed or locked). falling back to persistent JSON backup.');
     try {
       await tempPrisma.$disconnect();
     } catch (_) {}
-    return null;
+    return jsonBackup;
   }
 }
 
@@ -166,6 +194,7 @@ async function restoreOrSeed(backup: BackupData | null) {
             email: u.email,
             password: u.password,
             role: u.role,
+            isVerified: u.isVerified !== undefined ? u.isVerified : true,
             createdAt: u.createdAt ? new Date(u.createdAt) : undefined,
           },
         });
@@ -325,6 +354,111 @@ async function restoreOrSeed(backup: BackupData | null) {
       },
     });
     console.log('   School generator settings synchronized.');
+
+    // 8. Teacher Assignments
+    if (backup && backup.teacherAssignment && backup.teacherAssignment.length > 0) {
+      console.log('   Restoring Teacher Assignments...');
+      for (const ta of backup.teacherAssignment) {
+        try {
+          await prisma.teacherAssignment.upsert({
+            where: { id: ta.id },
+            update: {},
+            create: {
+              id: ta.id,
+              teacherId: ta.teacherId,
+              classId: ta.classId,
+              subjectId: ta.subjectId,
+              periodsPerWeek: ta.periodsPerWeek
+            }
+          });
+        } catch (e: any) {
+          console.warn(`      Failed to restore teacher assignment ${ta.id}:`, e.message);
+        }
+      }
+    }
+
+    // 9. Timetable
+    if (backup && backup.timetable && backup.timetable.length > 0) {
+      console.log('   Restoring Timetable slots...');
+      for (const tt of backup.timetable) {
+        try {
+          await prisma.timetable.upsert({
+            where: { id: tt.id },
+            update: {},
+            create: {
+              id: tt.id,
+              classId: tt.classId,
+              subjectId: tt.subjectId,
+              teacherId: tt.teacherId,
+              timeSlotId: tt.timeSlotId,
+              weekdayId: tt.weekdayId,
+              createdAt: tt.createdAt ? new Date(tt.createdAt) : undefined
+            }
+          });
+        } catch (e: any) {
+          console.warn(`      Failed to restore timetable slot ${tt.id}:`, e.message);
+        }
+      }
+    }
+
+    // 10. Marks
+    if (backup && backup.mark && backup.mark.length > 0) {
+      console.log('   Restoring Student Marks...');
+      for (const mk of backup.mark) {
+        try {
+          await prisma.mark.upsert({
+            where: { id: mk.id },
+            update: {},
+            create: {
+              id: mk.id,
+              studentId: mk.studentId,
+              subjectId: mk.subjectId,
+              teacherId: mk.teacherId,
+              catMarks: mk.catMarks,
+              examMarks: mk.examMarks,
+              formativeAssessment: mk.formativeAssessment,
+              comprehensiveAssessment: mk.comprehensiveAssessment,
+              practicalAssessment: mk.practicalAssessment,
+              summativeAssessment: mk.summativeAssessment,
+              totalMarks: mk.totalMarks,
+              averageMarks: mk.averageMarks,
+              competencyStatus: mk.competencyStatus,
+              grade: mk.grade,
+              term: mk.term,
+              year: mk.year,
+              academicYear: mk.academicYear,
+              school_id: mk.school_id,
+              createdAt: mk.createdAt ? new Date(mk.createdAt) : undefined
+            }
+          });
+        } catch (e: any) {
+          console.warn(`      Failed to restore mark ${mk.id}:`, e.message);
+        }
+      }
+    }
+
+    // 11. School Branding
+    if (backup && backup.schoolBranding && backup.schoolBranding.length > 0) {
+      console.log('   Restoring School Branding...');
+      for (const sb of backup.schoolBranding) {
+        try {
+          await prisma.schoolBranding.upsert({
+            where: { school_id: sb.school_id },
+            update: {
+              logo_url: sb.logo_url,
+              primary_color: sb.primary_color
+            },
+            create: {
+              school_id: sb.school_id,
+              logo_url: sb.logo_url,
+              primary_color: sb.primary_color
+            }
+          });
+        } catch (e: any) {
+          console.warn(`      Failed to restore school branding for school ${sb.school_id}:`, e.message);
+        }
+      }
+    }
 
     console.log('✨ Re-import and repair process completes with flawless success.');
   } catch (error: any) {

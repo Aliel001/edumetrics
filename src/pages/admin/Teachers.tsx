@@ -37,15 +37,41 @@ export default function Teachers() {
         await api.put(`/teachers/${editingTeacher.id}`, formData);
         toast.success('Staff account updated');
       } else {
-        await api.post('/teachers', formData);
-        toast.success(`${formData.role === 'dos' ? 'DOS' : 'Teacher'} account created successfully`);
+        const res = await api.post('/teachers', formData);
+        if (res.data.emailSent) {
+          toast.success(`${formData.role === 'dos' ? 'DOS' : 'Teacher'} account created & invitation sent!`);
+          if (res.data.previewUrl) {
+            console.log(`✉️ Ethereal sandbox real email link: ${res.data.previewUrl}`);
+            toast((t) => (
+              <span className="text-sm flex flex-col gap-1 text-left">
+                <span className="font-semibold text-blue-900">✉️ Real Invitation Link Generated</span>
+                <span className="text-xs text-gray-550">Click below to view the actual email sent to the teacher:</span>
+                <a
+                  href={res.data.previewUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-bold text-blue-600 underline hover:text-blue-800 mt-1"
+                >
+                  Open Sandbox Delivered Email ↗
+                </a>
+              </span>
+            ), { duration: 12000, id: 'email-preview-toast' });
+          }
+        } else {
+          toast.success(`${formData.role === 'dos' ? 'DOS' : 'Teacher'} account created, SMTP email dispatch skipped.`);
+        }
       }
       setFormData({ fullname: '', email: '', password: '', role: 'teacher' });
       setShowModal(false);
       setEditingTeacher(null);
       fetchTeachers();
-    } catch (error) {
-      toast.error(editingTeacher ? 'Failed to update account' : 'Failed to create staff account');
+    } catch (error: any) {
+      const serverMessage = error.response?.data?.message;
+      if (editingTeacher) {
+        toast.error(serverMessage || 'Failed to update account');
+      } else {
+        toast.error(serverMessage || 'Failed to create staff account');
+      }
     } finally {
       setSubmitting(false);
     }

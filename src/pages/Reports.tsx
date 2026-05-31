@@ -93,18 +93,18 @@ export default function Reports() {
 
       // Dynamic School Logo & Branding Integration
       let hasLogo = false;
-      if (branding?.logo_url) {
+      const logoToUse = branding?.logo_url || "/edumetric.png";
+      if (logoToUse) {
         try {
-          const imgUrl = branding.logo_url;
           let format = 'PNG';
-          if (imgUrl.includes('image/jpeg') || imgUrl.includes('image/jpg')) {
+          if (logoToUse.includes('image/jpeg') || logoToUse.includes('image/jpg')) {
             format = 'JPEG';
-          } else if (imgUrl.includes('image/webp')) {
+          } else if (logoToUse.includes('image/webp')) {
             format = 'WEBP';
-          } else if (imgUrl.includes('image/svg')) {
+          } else if (logoToUse.includes('image/svg')) {
             format = 'SVG';
           }
-          doc.addImage(imgUrl, format, 14, 15, 20, 20);
+          doc.addImage(logoToUse, format, 14, 15, 20, 20);
           hasLogo = true;
         } catch (err) {
           console.error("Could not render logo in PDF report:", err);
@@ -331,10 +331,13 @@ export default function Reports() {
     <div className="space-y-6">
       <div className="bg-white p-4 sm:p-6 md:p-8 rounded-2xl border border-slate-100 shadow-sm">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-          <div className="flex items-center gap-4">
-            <div className="bg-emerald-600 p-2.5 sm:p-3 rounded-xl text-white flex-shrink-0">
-              <FileDown size={24} />
-            </div>
+          <div className="flex items-center gap-4 text-left">
+            <img 
+              src={branding?.logo_url || "/edumetric.png"} 
+              alt="School Logo" 
+              className="w-12 h-12 sm:w-14 sm:h-14 object-contain rounded-xl border border-slate-100/80 p-1.5 bg-white shadow-xs flex-shrink-0"
+              referrerPolicy="no-referrer"
+            />
             <div>
               <h2 className="text-xl sm:text-2xl font-bold text-slate-900">
                 Academic Reports

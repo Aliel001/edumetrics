@@ -212,6 +212,17 @@ All metrics should be above zero for the Intelligent Generator to function flawl
     }
   };
 
+  // Timetable Business Rules configuration for easy tweaking later
+  const TIMETABLE_FREE_SLOT_RULES = [
+    {
+      dayName: 'Wednesday',
+      isFreeSlot: (slotIndex: number, totalSlotsCount: number) => {
+        // Free slots are defined as the last 3 periods of the day
+        return slotIndex >= totalSlotsCount - 3;
+      }
+    }
+  ];
+
   const handleManualSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.weekdayId || !formData.timeSlotId || !formData.classId) {
@@ -224,6 +235,20 @@ All metrics should be above zero for the Intelligent Generator to function flawl
     if (slot && (slot.slotType || '').toLowerCase() !== 'class') {
       toast.error("Cannot schedule during a break or lunch slot.");
       return;
+    }
+
+    // Check school business rules constraint
+    const selectedDayObj = weekdays.find(d => d.id === formData.weekdayId);
+    if (selectedDayObj) {
+      const activeClassSlots = timeSlots.filter(s => (s.slotType || '').toLowerCase() === 'class');
+      const classSlotIndex = activeClassSlots.findIndex(s => s.id === formData.timeSlotId);
+      const rule = TIMETABLE_FREE_SLOT_RULES.find(
+        r => r.dayName.toLowerCase() === selectedDayObj.dayName.toLowerCase()
+      );
+      if (rule && classSlotIndex !== -1 && rule.isFreeSlot(classSlotIndex, activeClassSlots.length)) {
+        toast.error("Wednesday (Kuwa 3) last 3 periods are reserved as FREE blocks. Scheduling lessons is forbidden.");
+        return;
+      }
     }
 
     const duplicateCombo = Array.isArray(allEntries) && allEntries.find(entry => 

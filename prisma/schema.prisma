@@ -11,14 +11,15 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  fullname  String
-  email     String   @unique
-  password  String
-  phone     String?
-  role      String   // "admin" or "teacher"
-  school_id String   @default("default-school")
-  createdAt DateTime @default(now())
+  id         String   @id @default(cuid())
+  fullname   String
+  email      String   @unique
+  password   String
+  phone      String?
+  role       String   // "admin" or "teacher"
+  school_id  String   @default("default-school")
+  isVerified Boolean  @default(true)
+  createdAt  DateTime @default(now())
 
   assignments TeacherAssignment[]
   marks       Mark[]

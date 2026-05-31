@@ -57,25 +57,7 @@ export default function Assignments() {
       return;
     }
 
-    const sameClass = Array.isArray(assignments) && assignments.find(a => 
-      a.teacherId === formData.teacherId &&
-      a.classId === formData.classId &&
-      (!editingAssignment || a.id !== editingAssignment.id)
-    );
-    if (sameClass) {
-      toast.error('This teacher is already assigned to this class.');
-      return;
-    }
-
-    const sameSubject = Array.isArray(assignments) && assignments.find(a => 
-      a.teacherId === formData.teacherId &&
-      a.subjectId === formData.subjectId &&
-      (!editingAssignment || a.id !== editingAssignment.id)
-    );
-    if (sameSubject) {
-      toast.error('This teacher is already assigned to this subject.');
-      return;
-    }
+    // A teacher can teach multiple classes and multiple subjects. We only prevent duplicating the exact same teacher-class-subject link.
 
     setSubmitting(true);
     try {

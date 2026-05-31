@@ -166,6 +166,16 @@ export default function Login() {
           </button>
         </div>
 
+        {new URL(window.location.href).searchParams.get('verified') === 'true' && (
+          <div className="mb-6 p-4 rounded-xl bg-emerald-50 border border-emerald-150 text-emerald-800 text-sm flex gap-3 items-start animate-fadeIn">
+            <CheckCircle2 className="text-emerald-500 shrink-0 mt-0.5" size={18} />
+            <div className="text-left">
+              <p className="font-bold text-emerald-900">Email verified successfully!</p>
+              <p className="text-xs text-emerald-600/90 mt-1 font-medium">Your teacher profile has been verified and active. You can now use your credentials to sign in below.</p>
+            </div>
+          </div>
+        )}
+
         {/* Dynamic header text */}
         <div className="text-left mb-6">
           <h2 className="text-xl sm:text-2xl font-bold text-slate-900">

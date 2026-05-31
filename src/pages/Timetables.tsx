@@ -141,6 +141,21 @@ export default function Timetables() {
       );
     }
 
+    // Timetable Business Rule visually applied to free slots
+    const day = weekdays.find(d => d.id === weekdayId);
+    if (day && day.dayName.toLowerCase() === 'wednesday' && (timeSlot.slotType || '').toLowerCase() === 'class') {
+      const activeClassSlots = timeSlots.filter(s => (s.slotType || '').toLowerCase() === 'class');
+      const slotIndex = activeClassSlots.findIndex(s => s.id === timeSlot.id);
+      if (slotIndex !== -1 && slotIndex >= activeClassSlots.length - 3) {
+        return (
+          <div className="bg-emerald-50/75 h-full flex flex-col items-center justify-center text-center gap-1 border border-emerald-100/50 rounded-xl px-2">
+            <span className="text-emerald-700 font-black text-[10px] uppercase tracking-wider font-sans">FREE PERIOD</span>
+            <span className="text-[9px] text-emerald-600 font-semibold opacity-85 leading-none">Wednesday Reserved</span>
+          </div>
+        );
+      }
+    }
+
     const session = timetable.find(t => t.weekdayId === weekdayId && t.timeSlotId === timeSlot.id);
     if (!session) return null;
     
