@@ -71,6 +71,16 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 app.use(cors());
 
+// Add middleware to guarantee that DB is ready before handling any api route
+app.use(async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    await ensureInitialized();
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Maintenance/repair block middleware
 app.use((req: Request, res: Response, next: NextFunction) => {
   if (isRepairing) {
@@ -262,9 +272,121 @@ app.get('/api/auth/check-admin', async (req, res) => {
   try {
     const count = await prisma.user.count({ where: { role: 'admin' } });
     res.json({ exists: count > 0 });
-  } catch (error) {
-    res.status(500).json({ message: 'Error checking admin existence' });
+  } catch (error: any) {
+    console.error('Error in check-admin:', error);
+    
+    const diagnostics: any = {
+      message: 'Error checking admin existence',
+      error: error.message || String(error),
+      code: error.code,
+      meta: error.meta,
+      stack: error.stack,
+      env: {
+        DATABASE_URL: process.env.DATABASE_URL,
+        VERCEL: process.env.VERCEL,
+        NODE_ENV: process.env.NODE_ENV,
+        cwd: process.cwd(),
+      },
+      filesystem: {}
+    };
+
+    try {
+      diagnostics.filesystem.tmpExists = fs.existsSync('/tmp');
+      diagnostics.filesystem.tmpFiles = fs.existsSync('/tmp') ? fs.readdirSync('/tmp') : [];
+      
+      const possiblePaths = [
+        path.resolve('prisma/dev.db'),
+        path.join(process.cwd(), 'prisma', 'dev.db'),
+        path.join(__dirname, 'prisma', 'dev.db'),
+        path.join(__dirname, '..', 'prisma', 'dev.db'),
+      ];
+      
+      diagnostics.filesystem.checkedPaths = possiblePaths.map(p => ({
+        path: p,
+        exists: fs.existsSync(p),
+        size: fs.existsSync(p) ? fs.statSync(p).size : 0
+      }));
+    } catch (fsErr: any) {
+      diagnostics.filesystem.error = fsErr.message;
+    }
+
+    res.status(500).json(diagnostics);
   }
+});
+
+app.get('/api/db-diagnostics', async (req, res) => {
+  const isVercel = !!process.env.VERCEL || !!process.env.NOW_BUILDER;
+  const dbUrl = process.env.DATABASE_URL || '';
+  const tmpDbPath = path.join('/tmp', 'dev.db');
+  
+  const diagnostics: any = {
+    timestamp: new Date().toISOString(),
+    isVercel,
+    databaseUrl: dbUrl,
+    cwd: process.cwd(),
+    tmpDir: {
+      exists: fs.existsSync('/tmp'),
+      files: [],
+      writePermission: false,
+      writeError: null
+    },
+    databaseFile: {
+      path: tmpDbPath,
+      exists: false,
+      stat: null,
+      error: null
+    },
+    prismaVerification: {
+      success: false,
+      weekdayCount: null,
+      error: null
+    }
+  };
+
+  // Check /tmp files and permissions
+  try {
+    if (fs.existsSync('/tmp')) {
+      diagnostics.tmpDir.files = fs.readdirSync('/tmp');
+      const testFile = path.join('/tmp', `diag_test_${Date.now()}.txt`);
+      fs.writeFileSync(testFile, 'diagnostics-write-test');
+      if (fs.readFileSync(testFile, 'utf8') === 'diagnostics-write-test') {
+        diagnostics.tmpDir.writePermission = true;
+      }
+      fs.unlinkSync(testFile);
+    }
+  } catch (err: any) {
+    diagnostics.tmpDir.writeError = err.message || String(err);
+  }
+
+  // Get database file stats in /tmp or actual location
+  try {
+    if (fs.existsSync(tmpDbPath)) {
+      diagnostics.databaseFile.exists = true;
+      const stat = fs.statSync(tmpDbPath);
+      diagnostics.databaseFile.stat = {
+        size: stat.size,
+        mode: stat.mode,
+        uid: stat.uid,
+        gid: stat.gid,
+        atime: stat.atime,
+        mtime: stat.mtime,
+        ctime: stat.ctime,
+      };
+    }
+  } catch (err: any) {
+    diagnostics.databaseFile.error = err.message || String(err);
+  }
+
+  // Prisma verification
+  try {
+    const count = await prisma.weekday.count();
+    diagnostics.prismaVerification.success = true;
+    diagnostics.prismaVerification.weekdayCount = count;
+  } catch (err: any) {
+    diagnostics.prismaVerification.error = err.message || String(err);
+  }
+
+  res.json(diagnostics);
 });
 
 // 2. Setup first admin account
@@ -2108,6 +2230,13 @@ async function doInitialization() {
   const isVercel = !!process.env.VERCEL || !!process.env.NOW_BUILDER;
   
   if (isVercel) {
+    console.log(`🔍 [Vercel Serverless Initialization] Current working directory (CWD):`, process.cwd());
+    try {
+      console.log(`🔍 [Vercel Serverless Initialization] CWD directory structure:`, fs.readdirSync(process.cwd()));
+    } catch (err: any) {
+      console.error(`🔍 [Vercel Serverless Initialization] Error reading CWD contents:`, err.message || err);
+    }
+
     console.log('🔍 [Vercel Serverless Initialization] Confirming /tmp read/write permissions...');
     const tmpDir = '/tmp';
     try {
@@ -2268,16 +2397,6 @@ export function ensureInitialized(): Promise<void> {
   }
   return initPromise;
 }
-
-// Add middleware to guarantee that DB is ready before handling any api route
-app.use(async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    await ensureInitialized();
-    next();
-  } catch (err) {
-    next(err);
-  }
-});
 
 async function startServer() {
   // Trigger initialization in background

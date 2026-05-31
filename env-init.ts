@@ -43,6 +43,13 @@ function findFileRecursive(dir: string, fileName: string, maxDepth: number = 4):
 const isVercel = !!process.env.VERCEL || !!process.env.NOW_BUILDER;
 
 if (isVercel) {
+  console.log(`[Vercel Serverless Initialization] Current working directory (CWD):`, process.cwd());
+  try {
+    console.log(`[Vercel Serverless Initialization] CWD directory structure:`, fs.readdirSync(process.cwd()));
+  } catch (err: any) {
+    console.error(`[Vercel Serverless Initialization] Error reading CWD contents:`, err.message || err);
+  }
+
   const tmpDb = path.join('/tmp', 'dev.db');
   
   // Force DATABASE_URL on Vercel to always utilize the writable /tmp filesystem
