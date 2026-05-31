@@ -12,6 +12,31 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Recursive search for the database file inside the serverless execution directory
+function findFileRecursive(dir: string, fileName: string, maxDepth: number = 4): string | null {
+  try {
+    const files = fs.readdirSync(dir);
+    for (const file of files) {
+      if (file === 'node_modules' || file === '.git' || file === '.vercel' || file === 'dist' || file === 'tmp') {
+        continue;
+      }
+      const fullPath = path.join(dir, file);
+      try {
+        const stat = fs.statSync(fullPath);
+        if (stat.isDirectory()) {
+          if (maxDepth > 0) {
+            const found = findFileRecursive(fullPath, fileName, maxDepth - 1);
+            if (found) return found;
+          }
+        } else if (file === fileName) {
+          return fullPath;
+        }
+      } catch (e) {}
+    }
+  } catch (e) {}
+  return null;
+}
+
 // Dynamic SQLite database setup to handle read-only hosting platforms like Vercel Serverless
 // We set process.env.DATABASE_URL immediately, so ANY module dynamically importing or creating PrismaClient
 // inherits this configuration and accesses the writable /tmp directory.
@@ -36,11 +61,19 @@ if (!process.env.DATABASE_URL) {
       }
     }
 
+    if (!srcDb) {
+      // Robust recursive search as fallback
+      srcDb = findFileRecursive(process.cwd(), 'dev.db');
+      if (!srcDb) {
+        srcDb = findFileRecursive(path.resolve(__dirname, '..'), 'dev.db');
+      }
+    }
+
     if (srcDb) {
       try {
         if (!fs.existsSync(tmpDb)) {
           fs.copyFileSync(srcDb, tmpDb);
-          console.log(`Database successfully copied from ${srcDb} to writable /tmp/dev.db location for Serverless environments.`);
+          console.log(`Database successfully copied from ${srcDb} to writable ${tmpDb} location for Serverless environments.`);
           
           // Also try copying auxiliary SQLite files if they exist
           const srcWal = srcDb + '-wal';
@@ -52,13 +85,13 @@ if (!process.env.DATABASE_URL) {
             try { fs.copyFileSync(srcShm, tmpDb + '-shm'); } catch (e) {}
           }
         } else {
-          console.log('Using existing /tmp/dev.db database file.');
+          console.log(`Using existing ${tmpDb} database file.`);
         }
       } catch (err) {
         console.error('Error copying dev.db to /tmp:', err);
       }
     } else {
-      console.warn('Source database dev.db not found in any of the expected locations:', possiblePaths);
+      console.warn('Source database dev.db not found in any of the expected locations or recursive searches:', possiblePaths);
     }
     process.env.DATABASE_URL = `file:${tmpDb}`;
   } else {
@@ -104,6 +137,11 @@ function getSchoolNameFromId(schoolId: string): string {
 let isRepairing = false;
 
 async function runDatabaseRepair() {
+  const isVercel = !!process.env.VERCEL || !!process.env.NOW_BUILDER;
+  if (isVercel) {
+    console.warn('⚠️ Skipping automated database recovery run via execSync on Vercel Serverless environment.');
+    return;
+  }
   if (isRepairing) {
     console.log('⚠️ Database repair is already in progress, skipping concurrent run.');
     return;
