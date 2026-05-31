@@ -1,4 +1,4 @@
-import './env-init';
+import './env-init.js';
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
@@ -14,8 +14,8 @@ import { createServer as createViteServer } from 'vite';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import cors from 'cors';
-import { sendTeacherInviteEmail, sendTeacherCredentialsEmail } from './server-mailer';
-import { triggerBackup } from './server-backup';
+import { sendTeacherInviteEmail, sendTeacherCredentialsEmail } from './server-mailer.js';
+import { triggerBackup } from './server-backup.js';
 
 declare global {
   namespace Express {
