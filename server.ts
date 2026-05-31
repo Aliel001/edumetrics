@@ -7,6 +7,10 @@ if (envConfig.parsed) {
 
 import path from 'path';
 import fs from 'fs';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Dynamic SQLite database setup to handle read-only hosting platforms like Vercel Serverless
 // We set process.env.DATABASE_URL immediately, so ANY module dynamically importing or creating PrismaClient
@@ -14,21 +18,47 @@ import fs from 'fs';
 if (!process.env.DATABASE_URL) {
   const isVercel = !!process.env.VERCEL || !!process.env.NOW_BUILDER;
   if (isVercel) {
-    const srcDb = path.join(process.cwd(), 'prisma', 'dev.db');
     const tmpDb = path.join('/tmp', 'dev.db');
-    try {
-      if (fs.existsSync(srcDb)) {
+    
+    // Find the source database file from multiple possible paths
+    const possiblePaths = [
+      path.resolve('prisma/dev.db'),
+      path.join(process.cwd(), 'prisma', 'dev.db'),
+      path.join(__dirname, 'prisma', 'dev.db'),
+      path.join(__dirname, '..', 'prisma', 'dev.db'),
+    ];
+    
+    let srcDb = null;
+    for (const p of possiblePaths) {
+      if (fs.existsSync(p)) {
+        srcDb = p;
+        break;
+      }
+    }
+
+    if (srcDb) {
+      try {
         if (!fs.existsSync(tmpDb)) {
           fs.copyFileSync(srcDb, tmpDb);
-          console.log('Database successfully copied to writable /tmp/dev.db location for Serverless environments.');
+          console.log(`Database successfully copied from ${srcDb} to writable /tmp/dev.db location for Serverless environments.`);
+          
+          // Also try copying auxiliary SQLite files if they exist
+          const srcWal = srcDb + '-wal';
+          const srcShm = srcDb + '-shm';
+          if (fs.existsSync(srcWal)) {
+            try { fs.copyFileSync(srcWal, tmpDb + '-wal'); } catch (e) {}
+          }
+          if (fs.existsSync(srcShm)) {
+            try { fs.copyFileSync(srcShm, tmpDb + '-shm'); } catch (e) {}
+          }
         } else {
           console.log('Using existing /tmp/dev.db database file.');
         }
-      } else {
-        console.warn('Source database dev.db not found at:', srcDb);
+      } catch (err) {
+        console.error('Error copying dev.db to /tmp:', err);
       }
-    } catch (err) {
-      console.error('Error copying dev.db to /tmp:', err);
+    } else {
+      console.warn('Source database dev.db not found in any of the expected locations:', possiblePaths);
     }
     process.env.DATABASE_URL = `file:${tmpDb}`;
   } else {
@@ -39,7 +69,6 @@ if (!process.env.DATABASE_URL) {
 import { PrismaClient } from '@prisma/client';
 import { execSync } from 'child_process';
 import express, { Request, Response, NextFunction } from 'express';
-import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
@@ -54,9 +83,6 @@ declare global {
     }
   }
 }
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const prisma = new PrismaClient({
   log: ['error', 'warn'],
