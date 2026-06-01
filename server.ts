@@ -506,8 +506,13 @@ app.post('/api/auth/login', async (req, res) => {
       { expiresIn: '24h' }
     );
     res.json({ token, user: { id: user.id, email: user.email, role: user.role, fullname: user.fullname, school_id: user.school_id } });
-  } catch (error) {
-    res.status(500).json({ message: 'Login failed' });
+  } catch (error: any) {
+    console.error('❌ LOGIN ERROR:', error);
+    res.status(500).json({ 
+      message: 'Login failed',
+      details: error.message || String(error),
+      stack: error.stack
+    });
   }
 });
 
