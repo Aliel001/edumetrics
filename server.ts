@@ -15,7 +15,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import cors from 'cors';
 import { sendTeacherInviteEmail, sendTeacherCredentialsEmail } from './server-mailer.js';
-import { triggerBackup } from './server-backup.js';
+import { triggerBackup, restoreBackupFromJSON } from './server-backup.js';
 
 declare global {
   namespace Express {
@@ -2382,6 +2382,7 @@ async function doInitialization() {
     }
 
     try {
+      await restoreBackupFromJSON(prisma);
       await seedWeekdays();
       await recalculateSubjectWeights();
     } catch (err: any) {

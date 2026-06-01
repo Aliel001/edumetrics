@@ -1,5 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
+import { getSchoolNameFromId } from '../lib/schoolUtils';
 
 export default function LoadingScreen() {
   const cachedBranding = React.useMemo(() => {
@@ -12,10 +13,7 @@ export default function LoadingScreen() {
   }, []);
 
   const schoolName = React.useMemo(() => {
-    if (cachedBranding?.school_id && cachedBranding.school_id !== 'default-school') {
-      return cachedBranding.school_id.charAt(0).toUpperCase() + cachedBranding.school_id.slice(1).replace(/-/g, ' ');
-    }
-    return 'Edumetric';
+    return getSchoolNameFromId(cachedBranding?.school_id);
   }, [cachedBranding]);
 
   return (

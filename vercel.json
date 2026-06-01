@@ -3,7 +3,7 @@
   "cleanUrls": true,
   "functions": {
     "api/index.ts": {
-      "includeFiles": ["prisma/**"]
+      "includeFiles": ["prisma/**", "server.js"]
     }
   },
   "rewrites": [

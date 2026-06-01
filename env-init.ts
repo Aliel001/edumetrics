@@ -51,87 +51,93 @@ if (isVercel) {
   }
 
   const tmpDb = path.join('/tmp', 'dev.db');
-  
-  // Force DATABASE_URL on Vercel to always utilize the writable /tmp filesystem
-  process.env.DATABASE_URL = `file:${tmpDb}`;
-  console.log(`[Vercel Serverless] Unconditionally overriding DATABASE_URL pointing to: ${process.env.DATABASE_URL}`);
+  const customDbUrl = process.env.DATABASE_URL;
+  const isCustomRemoteDb = customDbUrl && !customDbUrl.startsWith('file:') && !customDbUrl.startsWith('sqlite:');
 
-  // 1. Confirm read/write permissions on the /tmp directory before allowing requests
-  try {
-    const testFile = path.join('/tmp', `perm_test_${Date.now()}.txt`);
-    fs.writeFileSync(testFile, 'test-write-permission');
-    const readBack = fs.readFileSync(testFile, 'utf8');
-    if (readBack !== 'test-write-permission') {
-      throw new Error('Read back content mismatch.');
-    }
-    fs.unlinkSync(testFile);
-    console.log('✅ Successfully confirmed /tmp directory read and write permissions.');
-  } catch (err: any) {
-    console.error('❌ CRITICAL PERMISSION ERROR: Failed to read/write on /tmp directory:', err.message || err);
-  }
-
-  // 2. Clear any existing 0-byte or corrupted DB if present, then copy over the fresh source DB
-  let shouldCopy = false;
-  if (!fs.existsSync(tmpDb)) {
-    shouldCopy = true;
+  if (isCustomRemoteDb) {
+    console.log(`[Vercel Serverless] Custom remote DATABASE_URL detected. Skipping SQLite copy and /tmp setup.`);
   } else {
+    // Force DATABASE_URL on Vercel to always utilize the writable /tmp filesystem for default SQLite setup
+    process.env.DATABASE_URL = `file:${tmpDb}`;
+    console.log(`[Vercel Serverless] Setting DATABASE_URL to local writeable SQLite: ${process.env.DATABASE_URL}`);
+
+    // 1. Confirm read/write permissions on the /tmp directory before allowing requests
     try {
-      const stats = fs.statSync(tmpDb);
-      if (stats.size === 0) {
-        console.warn(`⚠️ Existing database at ${tmpDb} is empty (0 bytes). Deleting to trigger fresh source copy.`);
-        fs.unlinkSync(tmpDb);
+      const testFile = path.join('/tmp', `perm_test_${Date.now()}.txt`);
+      fs.writeFileSync(testFile, 'test-write-permission');
+      const readBack = fs.readFileSync(testFile, 'utf8');
+      if (readBack !== 'test-write-permission') {
+        throw new Error('Read back content mismatch.');
+      }
+      fs.unlinkSync(testFile);
+      console.log('✅ Successfully confirmed /tmp directory read and write permissions.');
+    } catch (err: any) {
+      console.error('❌ CRITICAL PERMISSION ERROR: Failed to read/write on /tmp directory:', err.message || err);
+    }
+
+    // 2. Clear any existing 0-byte or corrupted DB if present, then copy over the fresh source DB
+    let shouldCopy = false;
+    if (!fs.existsSync(tmpDb)) {
+      shouldCopy = true;
+    } else {
+      try {
+        const stats = fs.statSync(tmpDb);
+        if (stats.size === 0) {
+          console.warn(`⚠️ Existing database at ${tmpDb} is empty (0 bytes). Deleting to trigger fresh source copy.`);
+          fs.unlinkSync(tmpDb);
+          shouldCopy = true;
+        }
+      } catch (e) {
         shouldCopy = true;
       }
-    } catch (e) {
-      shouldCopy = true;
     }
-  }
 
-  // Find the source database file from multiple possible paths
-  const possiblePaths = [
-    path.resolve('prisma/dev.db'),
-    path.join(process.cwd(), 'prisma', 'dev.db'),
-    path.join(__dirname, 'prisma', 'dev.db'),
-    path.join(__dirname, '..', 'prisma', 'dev.db'),
-  ];
-  
-  let srcDb = null;
-  for (const p of possiblePaths) {
-    if (fs.existsSync(p)) {
-      srcDb = p;
-      break;
+    // Find the source database file from multiple possible paths
+    const possiblePaths = [
+      path.resolve('prisma/dev.db'),
+      path.join(process.cwd(), 'prisma', 'dev.db'),
+      path.join(__dirname, 'prisma', 'dev.db'),
+      path.join(__dirname, '..', 'prisma', 'dev.db'),
+    ];
+    
+    let srcDb = null;
+    for (const p of possiblePaths) {
+      if (fs.existsSync(p)) {
+        srcDb = p;
+        break;
+      }
     }
-  }
 
-  if (!srcDb) {
-    // Robust recursive search as fallback
-    srcDb = findFileRecursive(process.cwd(), 'dev.db');
     if (!srcDb) {
-      srcDb = findFileRecursive(path.resolve(__dirname, '..'), 'dev.db');
+      // Robust recursive search as fallback
+      srcDb = findFileRecursive(process.cwd(), 'dev.db');
+      if (!srcDb) {
+        srcDb = findFileRecursive(path.resolve(__dirname, '..'), 'dev.db');
+      }
     }
-  }
 
-  if (srcDb && shouldCopy) {
-    try {
-      fs.copyFileSync(srcDb, tmpDb);
-      console.log(`Database successfully copied from ${srcDb} to writable ${tmpDb} location for Serverless environments.`);
-      
-      // Also try copying auxiliary SQLite files if they exist
-      const srcWal = srcDb + '-wal';
-      const srcShm = srcDb + '-shm';
-      if (fs.existsSync(srcWal)) {
-        try { fs.copyFileSync(srcWal, tmpDb + '-wal'); } catch (e) {}
+    if (srcDb && shouldCopy) {
+      try {
+        fs.copyFileSync(srcDb, tmpDb);
+        console.log(`Database successfully copied from ${srcDb} to writable ${tmpDb} location for Serverless environments.`);
+        
+        // Also try copying auxiliary SQLite files if they exist
+        const srcWal = srcDb + '-wal';
+        const srcShm = srcDb + '-shm';
+        if (fs.existsSync(srcWal)) {
+          try { fs.copyFileSync(srcWal, tmpDb + '-wal'); } catch (e) {}
+        }
+        if (fs.existsSync(srcShm)) {
+          try { fs.copyFileSync(srcShm, tmpDb + '-shm'); } catch (e) {}
+        }
+      } catch (err) {
+        console.error('Error copying dev.db to /tmp:', err);
       }
-      if (fs.existsSync(srcShm)) {
-        try { fs.copyFileSync(srcShm, tmpDb + '-shm'); } catch (e) {}
-      }
-    } catch (err) {
-      console.error('Error copying dev.db to /tmp:', err);
+    } else if (!srcDb && !fs.existsSync(tmpDb)) {
+      console.warn('Source database dev.db not found in any of the expected locations or recursive searches:', possiblePaths);
+    } else {
+      console.log(`Using existing ${tmpDb} database file.`);
     }
-  } else if (!srcDb && !fs.existsSync(tmpDb)) {
-    console.warn('Source database dev.db not found in any of the expected locations or recursive searches:', possiblePaths);
-  } else {
-    console.log(`Using existing ${tmpDb} database file.`);
   }
 } else {
   if (!process.env.DATABASE_URL) {

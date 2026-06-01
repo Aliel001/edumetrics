@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../lib/api';
+import { getSchoolNameFromId } from '../../lib/schoolUtils';
 import { motion } from 'motion/react';
 import { 
   Sparkles, 
@@ -120,9 +121,7 @@ export default function Branding() {
     }
   };
 
-  const schoolName = user?.school_id && user.school_id !== 'default-school'
-    ? user.school_id.charAt(0).toUpperCase() + user.school_id.slice(1).replace(/-/g, ' ')
-    : 'Edumetric';
+  const schoolName = getSchoolNameFromId(user?.school_id);
 
   return (
     <div className="space-y-8 text-left max-w-5xl mx-auto">

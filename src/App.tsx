@@ -17,9 +17,13 @@ import {
   Calendar,
   Sparkles,
   Menu,
-  X
+  X,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { useAuth } from './context/AuthContext';
+import { useTheme } from './context/ThemeContext';
+import { getSchoolNameFromId } from './lib/schoolUtils';
 import { motion, AnimatePresence } from 'motion/react';
 import api from './lib/api';
 
@@ -96,6 +100,7 @@ const BrandingRouteGuard = ({ children }: { children: React.ReactNode }) => {
 
 const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
   const { user, logout, academicYear, setAcademicYear, branding } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const location = useLocation();
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
 
@@ -131,10 +136,7 @@ const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
   const menu = user?.role === 'admin' ? adminMenu : (user?.role === 'dos' ? dosMenu : teacherMenu);
 
   const schoolDisplayName = React.useMemo(() => {
-    if (user?.school_id && user.school_id !== 'default-school') {
-      return user.school_id.charAt(0).toUpperCase() + user.school_id.slice(1).replace(/-/g, ' ');
-    }
-    return 'Edumetric';
+    return getSchoolNameFromId(user?.school_id);
   }, [user]);
 
   return (
@@ -239,6 +241,19 @@ const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
             <div className="hidden lg:block">
               <GlobalSearch />
             </div>
+            <button
+              id="theme-toggle-btn"
+              onClick={toggleTheme}
+              className="p-2 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors focus:outline-none flex items-center justify-center border border-slate-200"
+              title={theme === 'light' ? 'Switch to Late-Night Grading Dark Mode' : 'Switch to Light Mode'}
+              aria-label="Toggle dark mode"
+            >
+              {theme === 'light' ? (
+                <Moon size={18} className="text-slate-600" />
+              ) : (
+                <Sun size={18} className="text-amber-400" />
+              )}
+            </button>
           </div>
         </header>
 

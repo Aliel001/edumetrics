@@ -60,3 +60,204 @@
   @apply w-full px-4 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-logo-500/20 focus:border-logo-500 transition-all;
 }
 
+/* --- DYNAMIC GLOBAL DARK MODE OVERRIDES (High-Contrast for Late-Night Grading) --- */
+.dark {
+  color-scheme: dark;
+}
+
+.dark body {
+  background-color: #0d1117 !important; /* Elegant high-contrast obsidian dark */
+  color: #f0f6fc !important;
+}
+
+/* Background Class Replacements */
+.dark .bg-\[\#F8FAFC\] {
+  background-color: #0d1117 !important;
+}
+
+.dark .bg-white {
+  background-color: #161b22 !important; /* GitHub dark mode dark gray style */
+}
+
+.dark .bg-slate-50 {
+  background-color: #0d1117 !important;
+}
+
+.dark .bg-slate-50\/50 {
+  background-color: rgba(13, 17, 23, 0.6) !important;
+}
+
+.dark .bg-slate-100 {
+  background-color: #21262d !important;
+}
+
+.dark .bg-slate-200 {
+  background-color: #30363d !important;
+}
+
+/* Text Colors */
+.dark .text-slate-900,
+.dark .text-slate-800,
+.dark .text-slate-700 {
+  color: #f0f6fc !important;
+}
+
+.dark .text-slate-600,
+.dark .text-slate-500 {
+  color: #8b949e !important;
+}
+
+.dark .text-slate-400 {
+  color: #7d8590 !important;
+}
+
+.dark .text-slate-300 {
+  color: #484f58 !important;
+}
+
+/* Borders */
+.dark .border,
+.dark .border-slate-100,
+.dark .border-slate-200,
+.dark .border-slate-300 {
+  border-color: #30363d !important;
+}
+
+/* Sidebars and Header Navs */
+.dark aside {
+  background-color: #161b22 !important;
+  border-right: 1px solid #30363d !important;
+}
+
+.dark header {
+  background-color: #161b22 !important;
+  border-bottom: 1px solid #30363d !important;
+}
+
+.dark .sidebar-item {
+  color: #8b949e !important;
+}
+
+.dark .sidebar-item:hover:not(.active) {
+  color: #f0f6fc !important;
+  background-color: rgba(240, 246, 252, 0.08) !important;
+}
+
+.dark .sidebar-item.active {
+  color: var(--color-logo-400, #38a1f9) !important;
+  background-color: rgba(56, 161, 249, 0.12) !important;
+  border-color: rgba(56, 161, 249, 0.25) !important;
+}
+
+/* Card Styling Rules */
+.dark .stats-card,
+.dark .auth-card {
+  background-color: #161b22 !important;
+  border-color: #30363d !important;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Input elements - critically high-contrast */
+.dark .input-field,
+.dark input[type="text"],
+.dark input[type="email"],
+.dark input[type="password"],
+.dark input[type="number"],
+.dark input[type="date"],
+.dark input[type="search"],
+.dark select,
+.dark textarea {
+  background-color: #0d1117 !important;
+  color: #f0f6fc !important;
+  border-color: #30363d !important;
+}
+
+.dark .input-field::placeholder,
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #57606a !important;
+}
+
+.dark input:focus,
+.dark select:focus,
+.dark textarea:focus {
+  border-color: var(--color-logo-400, #38a1f9) !important;
+  box-shadow: 0 0 0 2px rgba(56, 161, 249, 0.25) !important;
+}
+
+/* Tables, lists & data cells - tailored for Late-Night Grading sheets */
+.dark table {
+  background-color: #161b22 !important; 
+  color: #f0f6fc !important;
+}
+
+.dark thead,
+.dark th {
+  background-color: #1f242c !important;
+  color: #8b949e !important;
+  border-bottom: 1px solid #30363d !important;
+}
+
+.dark tbody tr {
+  border-bottom: 1px solid #21262d !important;
+}
+
+.dark tbody tr:hover {
+  background-color: #1f242c !important;
+}
+
+.dark td {
+  color: #f0f6fc !important;
+}
+
+/* Selection and dropdown picker items */
+.dark select option {
+  background-color: #161b22 !important;
+  color: #f0f6fc !important;
+}
+
+/* Adjusting dynamic notification banners and indicators */
+.dark .bg-green-50,
+.dark .bg-green-500\/10 {
+  background-color: rgba(46, 160, 67, 0.15) !important;
+  color: #58a6ff !important;
+  border-color: rgba(46, 160, 67, 0.3) !important;
+}
+
+.dark .bg-red-50,
+.dark .bg-red-500\/10 {
+  background-color: rgba(248, 81, 73, 0.15) !important;
+  color: #ff7b72 !important;
+  border-color: rgba(248, 81, 73, 0.3) !important;
+}
+
+.dark .bg-blue-50,
+.dark .bg-blue-500\/10 {
+  background-color: rgba(56, 161, 249, 0.15) !important;
+  color: #58a6ff !important;
+  border-color: rgba(56, 161, 249, 0.3) !important;
+}
+
+.dark .bg-yellow-50,
+.dark .bg-yellow-500\/10 {
+  background-color: rgba(210, 153, 34, 0.15) !important;
+  color: #f0883e !important;
+  border-color: rgba(210, 153, 34, 0.3) !important;
+}
+
+/* Scrollbars for late-night viewability and fluid grading action */
+.dark ::-webkit-scrollbar {
+  width: 10px;
+}
+.dark ::-webkit-scrollbar-track {
+  background: #0d1117;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #30363d;
+  border-radius: 6px;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #8b949e;
+}
+
+

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import api from "../lib/api";
 import { useAuth } from "../context/AuthContext";
+import { getSchoolNameFromId } from "../lib/schoolUtils";
 import { toast } from "react-hot-toast";
 import {
   FileDown,
@@ -111,9 +112,7 @@ export default function Reports() {
         }
       }
 
-      const schoolTitle = user?.school_id && user.school_id !== 'default-school'
-        ? user.school_id.charAt(0).toUpperCase() + user.school_id.slice(1).replace(/-/g, ' ')
-        : 'Edumetric Academy';
+      const schoolTitle = getSchoolNameFromId(user?.school_id);
 
       doc.setFont("Helvetica", "bold");
       doc.setTextColor(30, 41, 59);
