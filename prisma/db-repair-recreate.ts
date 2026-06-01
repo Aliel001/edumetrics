@@ -9,9 +9,9 @@ const DB_PATH = isVercel ? '/tmp/dev.db' : path.resolve('prisma/dev.db');
 const WAL_PATH = isVercel ? '/tmp/dev.db-wal' : path.resolve('prisma/dev.db-wal');
 const SHM_PATH = isVercel ? '/tmp/dev.db-shm' : path.resolve('prisma/dev.db-shm');
 
-if (isVercel && !process.env.DATABASE_URL) {
-  process.env.DATABASE_URL = `file:${DB_PATH}`;
-}
+// Since this application is built for the SQLite provider, we always force DATABASE_URL to SQLite.
+// This prevents external/global PostgreSQL environment variable overrides on Cloud Run from breaking Prisma.
+process.env.DATABASE_URL = `file:${DB_PATH}`;
 
 interface BackupData {
   users: any[];
@@ -155,7 +155,13 @@ function purgeDatabaseFiles() {
 async function rebuildDatabase() {
   console.log('🏗️ Triggering Prisma db push to generate and schema-sync a clean dev.db database...');
   try {
-    execSync('npx prisma db push --accept-data-loss', { stdio: 'inherit' });
+    execSync('npx prisma db push --accept-data-loss', {
+      stdio: 'inherit',
+      env: {
+        ...process.env,
+        DATABASE_URL: `file:${DB_PATH}`
+      }
+    });
     console.log('✅ Base database schema built successfully.');
   } catch (err: any) {
     console.error('❌ Failed to push database schema:', err.message);

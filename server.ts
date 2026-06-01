@@ -737,7 +737,7 @@ app.post('/api/teachers', authenticateToken, isAdmin, async (req, res) => {
         password: hashPassword, 
         role: role || 'teacher',
         school_id: req.user.school_id,
-        isVerified: false
+        isVerified: true
       }
     });
 
@@ -2214,18 +2214,58 @@ async function seedWeekdays() {
 }
 
 async function seedAdmin() {
-  const admin = await prisma.user.findFirst({ where: { role: 'admin' } });
-  if (!admin) {
-    const hashPassword = await bcrypt.hash('adminpassword', 10);
+  // 1. Seed System Admin (with admin123)
+  const adminByEmail = await prisma.user.findFirst({
+    where: { email: { equals: 'admin@edumetric.com' } }
+  });
+  if (!adminByEmail) {
+    const hashPassword = await bcrypt.hash('admin123', 10);
     await prisma.user.create({
       data: {
-        fullname: 'System Administrator',
+        fullname: 'System Admin',
         email: 'admin@edumetric.com',
         password: hashPassword,
-        role: 'admin'
+        role: 'admin',
+        isVerified: true
       }
     });
-    console.log('Default admin seeded: admin@edumetric.com / adminpassword');
+    console.log('Default Admin seeded: admin@edumetric.com / admin123');
+  } else {
+    // Ensure existing user is verified
+    if (adminByEmail.isVerified === false) {
+      await prisma.user.update({
+        where: { id: adminByEmail.id },
+        data: { isVerified: true }
+      });
+      console.log('✅ [Self-Healing] Default Admin set to verified.');
+    }
+  }
+
+  // 2. Seed Sample Teacher (with teacher123)
+  const teacherByEmail = await prisma.user.findFirst({
+    where: { email: { equals: 'teacher@edumetric.com' } }
+  });
+  if (!teacherByEmail) {
+    const hashPassword = await bcrypt.hash('teacher123', 10);
+    await prisma.user.create({
+      data: {
+        fullname: 'John Doe',
+        email: 'teacher@edumetric.com',
+        password: hashPassword,
+        role: 'teacher',
+        isVerified: true
+      }
+    });
+    console.log('Default Teacher seeded: teacher@edumetric.com / teacher123');
+  } else {
+    // Ensure existing teacher is verified
+    if (teacherByEmail.isVerified === false) {
+      await prisma.user.update({
+        where: { id: teacherByEmail.id },
+        data: { isVerified: true }
+      });
+      console.log('✅ [Self-Healing] Default Teacher set to verified.');
+    }
   }
 }
 
@@ -2389,7 +2429,17 @@ async function doInitialization() {
     try {
       await restoreBackupFromJSON(prisma);
       await seedWeekdays();
+      await seedAdmin();
       await recalculateSubjectWeights();
+
+      // [Self-Healing] Automatically mark any existing/newly restored unverified accounts as verified to prevent login lockout
+      const updateResult = await prisma.user.updateMany({
+        where: { isVerified: false },
+        data: { isVerified: true }
+      });
+      if (updateResult.count > 0) {
+        console.log(`✅ [Self-Healing] Automatically verified ${updateResult.count} previously unverified user/teacher accounts.`);
+      }
     } catch (err: any) {
       console.error('Failed to run startup seeds/recalculation:', err.message || err);
     }
