@@ -99,11 +99,12 @@ export default function GeneratorSettings() {
             <input 
               type="number"
               className="input-field"
-              value={settings.periodsPerDay}
+              value={isNaN(settings.periodsPerDay) ? '' : settings.periodsPerDay}
               onChange={(e) => setSettings({...settings, periodsPerDay: parseInt(e.target.value)})}
               min="1"
               max="15"
               required
+              id="generator-periods-per-day-input"
             />
             <p className="text-xs text-slate-400 mt-2">Maximum number of instructional periods available in a single working day.</p>
           </div>
@@ -136,9 +137,10 @@ export default function GeneratorSettings() {
               <input 
                 type="number"
                 className="input-field"
-                value={settings.breakDuration}
+                value={isNaN(settings.breakDuration) ? '' : settings.breakDuration}
                 onChange={(e) => setSettings({...settings, breakDuration: parseInt(e.target.value)})}
                 required
+                id="generator-break-duration-input"
               />
             </div>
           </div>
@@ -171,9 +173,10 @@ export default function GeneratorSettings() {
               <input 
                 type="number"
                 className="input-field"
-                value={settings.lunchDuration}
+                value={isNaN(settings.lunchDuration) ? '' : settings.lunchDuration}
                 onChange={(e) => setSettings({...settings, lunchDuration: parseInt(e.target.value)})}
                 required
+                id="generator-lunch-duration-input"
               />
             </div>
           </div>

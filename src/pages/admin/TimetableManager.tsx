@@ -134,9 +134,10 @@ All metrics should be above zero for the Intelligent Generator to function flawl
         ? `/timetable?classId=${selectedClass}` 
         : `/timetable?teacherId=${selectedTeacher}`;
       const tRes = await api.get(endpoint);
-      setTimetable(tRes.data);
+      setTimetable(Array.isArray(tRes.data) ? tRes.data : []);
     } catch (error) {
       toast.error('Failed to fetch timetable');
+      setTimetable([]);
     }
   };
 
@@ -325,7 +326,7 @@ All metrics should be above zero for the Intelligent Generator to function flawl
   const deleteEntry = async (id: string) => {
     try {
       await api.delete(`/timetable/${id}`);
-      setTimetable(timetable.filter(t => t.id !== id));
+      setTimetable(prev => Array.isArray(prev) ? prev.filter(t => t.id !== id) : []);
       setDeletingId(null);
       fetchMetaData(); // Refresh stats
       toast.success('Deleted');
@@ -512,7 +513,7 @@ All metrics should be above zero for the Intelligent Generator to function flawl
                  <tr><td colSpan={5} className="px-6 py-12 text-center"><Loader2 className="animate-spin mx-auto text-emerald-600" /></td></tr>
               ) : !(viewType === 'class' ? selectedClass : selectedTeacher) ? (
                 <tr><td colSpan={5} className="px-6 py-12 text-center text-slate-400">Select {viewType === 'class' ? 'a class' : 'a teacher'} above to view the schedule.</td></tr>
-              ) : timetable.length === 0 ? (
+              ) : (!Array.isArray(timetable) || timetable.length === 0) ? (
                 <tr><td colSpan={5} className="px-6 py-12 text-center text-slate-400">No entries found for this {viewType}.</td></tr>
               ) : (
                 timetable.map((t) => (

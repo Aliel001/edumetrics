@@ -44,6 +44,9 @@ import Branding from './pages/admin/Branding';
 import Timetables from './pages/Timetables';
 import MarkEntry from './pages/teacher/MarkEntry';
 import Reports from './pages/Reports';
+import TeacherAttendanceAdmin from './pages/admin/TeacherAttendance';
+import TeacherAttendanceTeacher from './pages/teacher/TeacherAttendance';
+import StudentAttendance from './pages/StudentAttendance';
 import CalendarYearPicker from './components/CalendarYearPicker';
 import GlobalSearch from './components/GlobalSearch';
 import LoadingScreen from './components/LoadingScreen';
@@ -107,9 +110,11 @@ const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
   const adminMenu = [
     { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { to: '/admin/teachers', icon: UserCircle, label: 'Staff Management' },
+    { to: '/admin/teacher-attendance', icon: ClipboardCheck, label: 'Teacher Attendance' },
     { to: '/admin/classes', icon: Layers, label: 'Classes' },
     { to: '/admin/subjects', icon: BookOpen, label: 'Subjects' },
     { to: '/admin/students', icon: GraduationCap, label: 'Students' },
+    { to: '/admin/student-attendance', icon: Users, label: 'Student Attendance' },
     { to: '/admin/assignments', icon: ClipboardCheck, label: 'Assignments' },
     { to: '/admin/time-slots', icon: Clock, label: 'Time Slots' },
     { to: '/admin/timetable', icon: Calendar, label: 'Timetable Builder' },
@@ -128,7 +133,9 @@ const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
 
   const teacherMenu = [
     { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+    { to: '/teacher/attendance', icon: ClipboardCheck, label: 'Portal Check-In' },
     { to: '/teacher/marks', icon: ClipboardCheck, label: 'Enter Marks' },
+    { to: '/teacher/student-attendance', icon: Users, label: 'Student Attendance' },
     { to: '/timetable', icon: Calendar, label: 'My Timetable' },
     { to: '/reports', icon: FileText, label: 'Reports / Cards' },
   ];
@@ -322,9 +329,11 @@ export default function App() {
                   
                   {/* Admin-only Routes */}
                   <Route path="/admin/teachers" element={<ProtectedRoute roles={['admin']}><Teachers /></ProtectedRoute>} />
+                  <Route path="/admin/teacher-attendance" element={<ProtectedRoute roles={['admin']}><TeacherAttendanceAdmin /></ProtectedRoute>} />
                   <Route path="/admin/classes" element={<ProtectedRoute roles={['admin']}><Classes /></ProtectedRoute>} />
                   <Route path="/admin/subjects" element={<ProtectedRoute roles={['admin']}><Subjects /></ProtectedRoute>} />
                   <Route path="/admin/students" element={<ProtectedRoute roles={['admin']}><Students /></ProtectedRoute>} />
+                  <Route path="/admin/student-attendance" element={<ProtectedRoute roles={['admin']}><StudentAttendance /></ProtectedRoute>} />
                   <Route path="/admin/assignments" element={<ProtectedRoute roles={['admin']}><Assignments /></ProtectedRoute>} />
                   <Route path="/admin/branding" element={<ProtectedRoute roles={['admin']}><Branding /></ProtectedRoute>} />
                   
@@ -335,6 +344,8 @@ export default function App() {
                   
                   {/* Teacher-only Routes */}
                   <Route path="/teacher/marks" element={<ProtectedRoute roles={['teacher']}><MarkEntry /></ProtectedRoute>} />
+                  <Route path="/teacher/attendance" element={<ProtectedRoute roles={['teacher']}><TeacherAttendanceTeacher /></ProtectedRoute>} />
+                  <Route path="/teacher/student-attendance" element={<ProtectedRoute roles={['teacher']}><StudentAttendance /></ProtectedRoute>} />
                   
                   {/* Shared authenticated routes */}
                   <Route path="/reports" element={<ProtectedRoute roles={['admin', 'dos', 'teacher']}><Reports /></ProtectedRoute>} />

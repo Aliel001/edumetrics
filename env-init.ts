@@ -140,16 +140,17 @@ if (isVercel) {
     }
   }
 } else {
-  // If the protocol isn't sqlite/file:, or if DATABASE_URL is missing, force default local SQLite for SQLite provider
   const curUrl = process.env.DATABASE_URL;
-  if (!curUrl || (!curUrl.startsWith('file:') && !curUrl.startsWith('sqlite:'))) {
-    process.env.DATABASE_URL = `file:${path.resolve('prisma/dev.db')}`;
-  } else if (curUrl.startsWith('file:')) {
+  if (curUrl && (curUrl.startsWith('postgresql:') || curUrl.startsWith('postgres:'))) {
+    console.log('PostgreSQL database detected. Keeping DATABASE_URL intact.');
+  } else if (curUrl && curUrl.startsWith('file:')) {
     // Convert relative file URL to absolute to ensure both root server and sub-processes resolve the same file path!
     const relativePath = curUrl.substring(5);
     if (!path.isAbsolute(relativePath)) {
       process.env.DATABASE_URL = `file:${path.resolve(process.cwd(), relativePath)}`;
     }
+  } else {
+    console.warn('⚠️ WARNING: DATABASE_URL is not configured or not valid for PostgreSQL. Please set a valid PostgreSQL connection string (such as from Neon) in your environment variables.');
   }
 }
 

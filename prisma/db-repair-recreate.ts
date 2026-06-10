@@ -25,6 +25,8 @@ interface BackupData {
   teacherAssignment?: any[];
   timetable?: any[];
   mark?: any[];
+  teacherAttendance?: any[];
+  studentAttendance?: any[];
 }
 
 async function tryBackup(): Promise<BackupData | null> {
@@ -112,6 +114,20 @@ async function tryBackup(): Promise<BackupData | null> {
       console.log(`✅ Rescued ${backup.generatorSettings.length} GeneratorSettings successfully.`);
     } catch (e: any) {
       console.warn('⚠️ Could not rescue GeneratorSettings:', e.message || e);
+    }
+
+    try {
+      backup.teacherAttendance = await tempPrisma.teacherAttendance.findMany();
+      console.log(`✅ Rescued ${backup.teacherAttendance.length} TeacherAttendances successfully.`);
+    } catch (e: any) {
+      console.warn('⚠️ Could not rescue TeacherAttendances:', e.message || e);
+    }
+
+    try {
+      backup.studentAttendance = await tempPrisma.studentAttendance.findMany();
+      console.log(`✅ Rescued ${backup.studentAttendance.length} StudentAttendances successfully.`);
+    } catch (e: any) {
+      console.warn('⚠️ Could not rescue StudentAttendances:', e.message || e);
     }
 
     await tempPrisma.$disconnect();
@@ -467,6 +483,68 @@ async function restoreOrSeed(backup: BackupData | null) {
           });
         } catch (e: any) {
           console.warn(`      Failed to restore school branding for school ${sb.school_id}:`, e.message);
+        }
+      }
+    }
+
+    // 12. Teacher Attendance
+    if (backup && backup.teacherAttendance && backup.teacherAttendance.length > 0) {
+      console.log('   Restoring Teacher Attendance...');
+      for (const ta of backup.teacherAttendance) {
+        try {
+          await prisma.teacherAttendance.upsert({
+            where: { id: ta.id },
+            update: {
+              teacherId: ta.teacherId,
+              date: ta.date,
+              status: ta.status,
+              remark: ta.remark,
+              createdAt: ta.createdAt ? new Date(ta.createdAt) : undefined
+            },
+            create: {
+              id: ta.id,
+              teacherId: ta.teacherId,
+              date: ta.date,
+              status: ta.status,
+              remark: ta.remark,
+              createdAt: ta.createdAt ? new Date(ta.createdAt) : undefined
+            }
+          });
+        } catch (e: any) {
+          console.warn(`      Failed to restore teacher attendance ${ta.id}:`, e.message);
+        }
+      }
+    }
+
+    // 13. Student Attendance
+    if (backup && backup.studentAttendance && backup.studentAttendance.length > 0) {
+      console.log('   Restoring Student Attendance...');
+      for (const sa of backup.studentAttendance) {
+        try {
+          await prisma.studentAttendance.upsert({
+            where: { id: sa.id },
+            update: {
+              studentId: sa.studentId,
+              classId: sa.classId,
+              teacherId: sa.teacherId,
+              date: sa.date,
+              status: sa.status,
+              remark: sa.remark,
+              createdAt: sa.createdAt ? new Date(sa.createdAt) : undefined
+            },
+            create: {
+              id: sa.id,
+              studentId: sa.studentId,
+              classId: sa.classId,
+              teacherId: sa.teacherId,
+              date: sa.date,
+              status: sa.status,
+              remark: sa.remark,
+              createdAt: sa.createdAt ? new Date(sa.createdAt) : undefined
+            }
+          });
+        } catch (e: any) {
+          console.warn(`      Failed to restore student attendance ${sa.id}:`, e.message);
         }
       }
     }

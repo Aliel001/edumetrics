@@ -54,7 +54,7 @@ export default function Dashboard() {
   const [assignmentsLoading, setAssignmentsLoading] = useState(false);
 
   useEffect(() => {
-    if (user?.role === 'admin') {
+    if (user?.role === 'admin' || user?.role === 'dos') {
       setLoading(true);
       api.get(`/stats?year=${academicYear}`)
         .then(res => setStats(res.data))

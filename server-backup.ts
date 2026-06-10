@@ -3,6 +3,9 @@ import fs from 'fs';
 import path from 'path';
 
 let prismaClient: PrismaClient | null = null;
+export function setBackupPrismaClient(client: PrismaClient) {
+  prismaClient = client;
+}
 function getPrisma(): PrismaClient {
   if (!prismaClient) {
     prismaClient = new PrismaClient();
@@ -35,6 +38,8 @@ export async function autoBackupDatabase() {
       teacherAssignment: await prisma.teacherAssignment.findMany(),
       timetable: await prisma.timetable.findMany(),
       mark: await prisma.mark.findMany(),
+      teacherAttendance: await prisma.teacherAttendance.findMany(),
+      studentAttendance: await prisma.studentAttendance.findMany(),
       timestamp: new Date().toISOString()
     };
     
@@ -241,6 +246,58 @@ export async function restoreBackupFromJSON(prisma: PrismaClient): Promise<boole
             academicYear: mk.academicYear,
             school_id: mk.school_id,
             createdAt: mk.createdAt ? new Date(mk.createdAt) : undefined
+          }
+        });
+      }
+    }
+    
+    // 12. TeacherAttendance
+    if (backup.teacherAttendance && Array.isArray(backup.teacherAttendance)) {
+      for (const ta of backup.teacherAttendance) {
+        await prisma.teacherAttendance.upsert({
+          where: { id: ta.id },
+          update: {
+            teacherId: ta.teacherId,
+            date: ta.date,
+            status: ta.status,
+            remark: ta.remark,
+            createdAt: ta.createdAt ? new Date(ta.createdAt) : undefined
+          },
+          create: {
+            id: ta.id,
+            teacherId: ta.teacherId,
+            date: ta.date,
+            status: ta.status,
+            remark: ta.remark,
+            createdAt: ta.createdAt ? new Date(ta.createdAt) : undefined
+          }
+        });
+      }
+    }
+
+    // 13. StudentAttendance
+    if (backup.studentAttendance && Array.isArray(backup.studentAttendance)) {
+      for (const sa of backup.studentAttendance) {
+        await prisma.studentAttendance.upsert({
+          where: { id: sa.id },
+          update: {
+            studentId: sa.studentId,
+            classId: sa.classId,
+            teacherId: sa.teacherId,
+            date: sa.date,
+            status: sa.status,
+            remark: sa.remark,
+            createdAt: sa.createdAt ? new Date(sa.createdAt) : undefined
+          },
+          create: {
+            id: sa.id,
+            studentId: sa.studentId,
+            classId: sa.classId,
+            teacherId: sa.teacherId,
+            date: sa.date,
+            status: sa.status,
+            remark: sa.remark,
+            createdAt: sa.createdAt ? new Date(sa.createdAt) : undefined
           }
         });
       }

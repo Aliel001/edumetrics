@@ -23,9 +23,37 @@ export default function Reports() {
   const [students, setStudents] = useState<any[]>([]);
   const [classMarks, setClassMarks] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [expandedStudentId, setExpandedStudentId] = useState<string | null>(null);
 
   const [term, setTerm] = useState("Term 1");
   const [year, setYear] = useState(academicYear);
+
+  const [promotions, setPromotions] = useState<Record<string, string>>({});
+
+  const getPromotionStatus = (studentId: string) => {
+    return promotions[studentId] || localStorage.getItem(`student_promotion_${studentId}_${term}_${year}`) || "";
+  };
+
+  const handlePromotionChange = (studentId: string, status: "Promoted" | "Repeat") => {
+    const current = getPromotionStatus(studentId);
+    let newStatus = "";
+    if (current !== status) {
+      newStatus = status;
+    }
+    
+    if (newStatus) {
+      localStorage.setItem(`student_promotion_${studentId}_${term}_${year}`, newStatus);
+    } else {
+      localStorage.removeItem(`student_promotion_${studentId}_${term}_${year}`);
+    }
+
+    setPromotions(prev => ({
+      ...prev,
+      [studentId]: newStatus
+    }));
+
+    toast.success(`Updated status to: ${newStatus || "Unspecified"}`);
+  };
 
   useEffect(() => {
     setYear(academicYear);
@@ -200,7 +228,7 @@ export default function Reports() {
       doc.setTextColor(15, 23, 42);
       doc.text(`${term}`, 140, 70);
 
-      // TVET Assessments Table Data
+      // TVET Assessments Table Data (Do not put current marks or position on report)
       const tableData = assessments.map((m: any) => {
         const fa = m.formativeAssessment ?? 0;
         const ca = m.comprehensiveAssessment ?? 0;
@@ -209,15 +237,11 @@ export default function Reports() {
         const total = m.totalMarks ?? (fa + ca + pa + sa);
         const periods = m.periods ?? m.subject?.periodsPerWeek ?? 0;
         const weight = m.subjectWeight ?? m.subject?.subjectWeight ?? 0.0;
-        const weightedScore = m.weightedScore ?? (total * (weight / 100));
 
         return [
           m.subject?.subjectName || "Unknown Module",
           periods.toString(),
           `${weight.toFixed(1)}%`,
-          total.toFixed(0),
-          weightedScore.toFixed(1),
-          m.grade,
           m.competencyStatus || (total >= 70 ? 'Competent' : 'Not Yet Competent')
         ];
       });
@@ -230,9 +254,6 @@ export default function Reports() {
             "Subject / Module",
             "Periods",
             "Weight",
-            "Score",
-            "Weighted Score",
-            "Grade",
             "Competency Status",
           ],
         ],
@@ -246,13 +267,10 @@ export default function Reports() {
           halign: "center",
         },
         columnStyles: {
-          0: { cellWidth: 55, fontStyle: "bold" },
+          0: { cellWidth: 95, fontStyle: "bold" },
           1: { halign: "center" },
           2: { halign: "center" },
           3: { halign: "center", fontStyle: "bold" },
-          4: { halign: "center", fontStyle: "bold" },
-          5: { halign: "center", fontStyle: "bold" },
-          6: { halign: "center", fontStyle: "bold" },
         },
         styles: {
           fontSize: 8,
@@ -282,41 +300,87 @@ export default function Reports() {
 
       // Status Indicator Box
       doc.setFillColor(241, 245, 249);
-      doc.rect(14, finalY, 182, 32, "F");
+      doc.rect(14, finalY, 182, 26, "F");
 
       doc.setFont("Helvetica", "bold");
       doc.setFontSize(9);
       doc.setTextColor(15, 23, 42);
-      doc.text(`PORTFOLIO SUMMARY PERFORMANCE (WEIGHTED)`, 20, finalY + 6);
+      doc.text(`PORTFOLIO SUMMARY PERFORMANCE`, 20, finalY + 6);
 
       doc.setFont("Helvetica", "normal");
       doc.text(`Total Timetable Workload: ${totalPeriods} Periods/Week`, 20, finalY + 14);
       doc.text(`Total Subject Weight Covered: ${totalWeight.toFixed(1)}%`, 20, finalY + 21);
-      doc.text(`Final Weighted Score: ${finalWeightedScore.toFixed(1)} / 100`, 20, finalY + 27);
 
       // Determine average outcome
       const outcomeVal = finalWeightedScore;
-      const outcomeStatus = outcomeVal >= 80 ? 'Highly Competent' : outcomeVal >= 70 ? 'Competent' : outcomeVal >= 50 ? 'Basic Competent' : 'Not Yet Competent';
+      const outcomeStatus = outcomeVal >= 70 ? 'Competent' : 'Not Yet Competent';
       
       doc.setFont("Helvetica", "bold");
-      doc.text(`Final Competency Outcome:`, 110, finalY + 14);
+      doc.text(`Final Competency Outcome:`, 110, finalY + 11);
       if (outcomeVal >= 70) {
         doc.setTextColor(16, 185, 129);
       } else {
         doc.setTextColor(239, 68, 68);
       }
-      doc.text(outcomeStatus.toUpperCase(), 110, finalY + 21);
+      doc.text(outcomeStatus.toUpperCase(), 110, finalY + 18);
+
+      // Final Report Decision (Promoted vs Repeat) Section Box (visible on report PDF)
+      const decisionY = finalY + 30;
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(226, 232, 240);
+      doc.rect(14, decisionY, 182, 16, "FD");
+
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(15, 23, 42);
+      doc.text("ACADEMIC YEAR PROMOTION STATUS / DECISION", 20, decisionY + 6);
+
+      // Fetch dynamic student decision state
+      const studentDecision = localStorage.getItem(`student_promotion_${student.id}_${term}_${year}`) || "";
+
+      doc.setFont("Helvetica", "normal");
+      doc.setFontSize(9);
+
+      // Checkbox 1: PROMOTED
+      const isPromoted = studentDecision === "Promoted";
+      doc.setDrawColor(30, 41, 59);
+      doc.rect(20, decisionY + 9, 4, 4, "S");
+      if (isPromoted) {
+        doc.setFillColor(16, 185, 129); // green
+        doc.rect(20.5, decisionY + 9.5, 3, 3, "F");
+        doc.setFont("Helvetica", "bold");
+        doc.setTextColor(16, 185, 129);
+      } else {
+        doc.setTextColor(71, 85, 105);
+      }
+      doc.text("PROMOTED", 26, decisionY + 12);
+
+      // Checkbox 2: REPEAT
+      const isRepeat = studentDecision === "Repeat";
+      doc.setDrawColor(30, 41, 59);
+      doc.rect(80, decisionY + 9, 4, 4, "S");
+      if (isRepeat) {
+        doc.setFillColor(239, 68, 68); // red
+        doc.rect(80.5, decisionY + 9.5, 3, 3, "F");
+        doc.setFont("Helvetica", "bold");
+        doc.setTextColor(239, 68, 68);
+      } else {
+        doc.setFont("Helvetica", "normal");
+        doc.setTextColor(71, 85, 105);
+      }
+      doc.text("REPEAT CURRENT GRADE", 86, decisionY + 12);
 
       // Sign-off section
+      const signOffY = decisionY + 28;
       doc.setDrawColor(226, 232, 240);
-      doc.line(14, finalY + 45, 80, finalY + 45);
-      doc.line(120, finalY + 45, 196, finalY + 45);
+      doc.line(14, signOffY, 80, signOffY);
+      doc.line(120, signOffY, 196, signOffY);
 
       doc.setFont("Helvetica", "normal");
       doc.setFontSize(8);
       doc.setTextColor(100);
-      doc.text("Assessor / Lead Teacher Signature", 14, finalY + 50);
-      doc.text("Internal Verifier / Administrator", 120, finalY + 50);
+      doc.text("Assessor / Lead Teacher Signature", 14, signOffY + 5);
+      doc.text("Internal Verifier / Administrator", 120, signOffY + 5);
 
       // Save PDF
       doc.save(`TVET_CBT_Report_${student.firstname}_${student.lastname}.pdf`);
@@ -324,6 +388,36 @@ export default function Reports() {
     } catch (error) {
       toast.error("Failed to generate report", { id: toastId });
     }
+  };
+
+  // Precompute rankings for students based on their accumulated marks
+  const studentScores = (students || []).map(st => {
+    const stMarks = classMarks.filter((m: any) => m.studentId === st.id);
+    const hasMarks = stMarks.length > 0;
+    const weightedSum = stMarks.reduce(
+      (acc: number, curr: any) => acc + (curr.weightedScore ?? 0),
+      0,
+    );
+    return { id: st.id, score: weightedSum, hasMarks };
+  });
+
+  const sortedReady = [...studentScores]
+    .filter(item => item.hasMarks)
+    .sort((a, b) => b.score - a.score);
+
+  const studentRanks: Record<string, number> = {};
+  sortedReady.forEach((item, index) => {
+    if (index > 0 && item.score === sortedReady[index - 1].score) {
+      studentRanks[item.id] = studentRanks[sortedReady[index - 1].id];
+    } else {
+      studentRanks[item.id] = index + 1;
+    }
+  });
+
+  const getOrdinal = (n: number) => {
+    const s = ["th", "st", "nd", "rd"];
+    const v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
   };
 
   return (
@@ -433,6 +527,8 @@ export default function Reports() {
                   <th className="px-4 sm:px-6 py-4 text-center">Class</th>
                   <th className="px-4 sm:px-6 py-4 text-center">Status</th>
                   <th className="px-4 sm:px-6 py-4 text-center">Portfolio Score (Weighted)</th>
+                  <th className="px-4 sm:px-6 py-4 text-center">Class Position</th>
+                  <th className="px-4 sm:px-6 py-4 text-center">Decision (Promoted / Repeat)</th>
                   <th className="px-4 sm:px-6 py-4 text-right">Generate</th>
                 </tr>
               </thead>
@@ -440,7 +536,7 @@ export default function Reports() {
                 {loading ? (
                   <tr>
                     <td
-                      colSpan={5}
+                      colSpan={7}
                       className="px-4 sm:px-6 py-12 text-center text-slate-400"
                     >
                       <Loader2 className="animate-spin mx-auto" />
@@ -449,7 +545,7 @@ export default function Reports() {
                 ) : Array.isArray(students) && students.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={5}
+                      colSpan={7}
                       className="px-4 sm:px-6 py-12 text-center text-slate-500"
                     >
                       No students found in this class.
@@ -471,57 +567,153 @@ export default function Reports() {
                         : "-- %";
                     const isReady = studentMarks.length > 0;
                     const studentClass = classes.find((c) => c.id === s.classId)?.className || "TVET Section";
+                    const positionVal = isReady && studentRanks[s.id] ? getOrdinal(studentRanks[s.id]) : "--";
 
                     return (
-                      <tr
-                        key={s.id}
-                        className="hover:bg-slate-50 transition-colors"
-                      >
-                        <td className="px-4 sm:px-6 py-4">
-                          <div className="flex items-center gap-3">
-                            <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 font-bold border border-slate-200 text-sm">
-                              {s.firstname.charAt(0)}
+                      <React.Fragment key={s.id}>
+                        <tr
+                           className="hover:bg-slate-50 transition-colors"
+                        >
+                          <td className="px-4 sm:px-6 py-4">
+                            <div className="flex items-center gap-3">
+                              <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 font-bold border border-slate-200 text-sm">
+                                {s.firstname.charAt(0)}
+                              </div>
+                              <div>
+                                <p className="font-bold text-slate-900 text-sm sm:text-base">
+                                  {s.firstname} {s.lastname}
+                                </p>
+                                <p className="text-[10px] sm:text-xs text-slate-400">
+                                  {s.gender}
+                                </p>
+                              </div>
                             </div>
-                            <div>
-                              <p className="font-bold text-slate-900 text-sm sm:text-base">
-                                {s.firstname} {s.lastname}
-                              </p>
-                              <p className="text-[10px] sm:text-xs text-slate-400">
-                                {s.gender}
-                              </p>
+                          </td>
+                          <td className="px-4 sm:px-6 py-4 text-center">
+                            <span className="text-xs sm:text-sm font-semibold text-slate-600 bg-slate-100/60 px-2 sm:px-2.5 py-1 rounded-md">
+                              {studentClass}
+                            </span>
+                          </td>
+                          <td className="px-4 sm:px-6 py-4 text-center">
+                            <span
+                              className={`px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-bold ${
+                                isReady
+                                  ? "bg-emerald-50 text-emerald-600"
+                                  : "bg-amber-50 text-amber-600"
+                              }`}
+                            >
+                              {isReady ? "READY" : "NO MARKS"}
+                            </span>
+                          </td>
+                          <td className="px-4 sm:px-6 py-4 text-center font-bold text-slate-700 text-sm sm:text-base">
+                            {average}
+                          </td>
+                          <td className="px-4 sm:px-6 py-4 text-center font-bold text-slate-700 text-sm sm:text-base">
+                            {positionVal}
+                          </td>
+                          <td className="px-4 sm:px-6 py-4 text-center">
+                            {isReady ? (
+                              <div className="flex items-center justify-center gap-4">
+                                <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                                  <input
+                                    type="checkbox"
+                                    checked={getPromotionStatus(s.id) === "Promoted"}
+                                    onChange={() => handlePromotionChange(s.id, "Promoted")}
+                                    className="w-4 h-4 text-emerald-600 border-slate-300 rounded focus:ring-emerald-500/20 accent-emerald-600"
+                                  />
+                                  <span className={`text-xs font-bold ${getPromotionStatus(s.id) === "Promoted" ? "text-emerald-700 font-extrabold" : "text-slate-500"}`}>Promoted</span>
+                                </label>
+
+                                <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                                  <input
+                                    type="checkbox"
+                                    checked={getPromotionStatus(s.id) === "Repeat"}
+                                    onChange={() => handlePromotionChange(s.id, "Repeat")}
+                                    className="w-4 h-4 text-rose-600 border-slate-300 rounded focus:ring-rose-500/20 accent-rose-600"
+                                  />
+                                  <span className={`text-xs font-bold ${getPromotionStatus(s.id) === "Repeat" ? "text-rose-700 font-extrabold" : "text-slate-500"}`}>Repeat</span>
+                                </label>
+                              </div>
+                            ) : (
+                              <span className="text-xs text-slate-400 italic font-semibold">No report available</span>
+                            )}
+                          </td>
+                          <td className="px-4 sm:px-6 py-4 text-right">
+                            <div className="flex items-center gap-2 justify-end">
+                              <button
+                                onClick={() => setExpandedStudentId(expandedStudentId === s.id ? null : s.id)}
+                                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+                                  expandedStudentId === s.id
+                                    ? "bg-slate-800 text-white border-slate-800 hover:bg-slate-900"
+                                    : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                                  }`}
+                              >
+                                {expandedStudentId === s.id ? "Hide Marks" : "Preview Marks"}
+                              </button>
+                              <button
+                                onClick={() => generateReport(s)}
+                                disabled={(!user || (user.role !== "admin" && user.role !== "teacher")) || !isReady}
+                                className={`btn ${(user && (user.role === "admin" || user.role === "teacher")) && isReady ? "bg-slate-100 text-slate-700 hover:bg-emerald-600 hover:text-white" : "bg-slate-50 text-slate-300 cursor-not-allowed"} flex items-center gap-1.5 text-xs sm:text-sm px-3 py-1.5 sm:px-4 sm:py-2`}
+                              >
+                                <Printer size={14} />
+                                Report
+                              </button>
                             </div>
-                          </div>
-                        </td>
-                        <td className="px-4 sm:px-6 py-4 text-center">
-                          <span className="text-xs sm:text-sm font-semibold text-slate-600 bg-slate-100/60 px-2 sm:px-2.5 py-1 rounded-md">
-                            {studentClass}
-                          </span>
-                        </td>
-                        <td className="px-4 sm:px-6 py-4 text-center">
-                          <span
-                            className={`px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-bold ${
-                              isReady
-                                ? "bg-emerald-50 text-emerald-600"
-                                : "bg-amber-50 text-amber-600"
-                            }`}
-                          >
-                            {isReady ? "READY" : "NO MARKS"}
-                          </span>
-                        </td>
-                        <td className="px-4 sm:px-6 py-4 text-center font-bold text-slate-700 text-smsm:text-base">
-                          {average}
-                        </td>
-                        <td className="px-4 sm:px-6 py-4 text-right">
-                          <button
-                            onClick={() => generateReport(s)}
-                            disabled={(!user || (user.role !== "admin" && user.role !== "teacher")) || !isReady}
-                            className={`btn ${(user && (user.role === "admin" || user.role === "teacher")) && isReady ? "bg-slate-100 text-slate-700 hover:bg-emerald-600 hover:text-white" : "bg-slate-50 text-slate-300 cursor-not-allowed"} flex items-center gap-1.5 ml-auto text-xs sm:text-sm px-3 py-1.5 sm:px-4 sm:py-2`}
-                          >
-                            <Printer size={14} />
-                            Report
-                          </button>
-                        </td>
-                      </tr>
+                          </td>
+                        </tr>
+                        
+                        {expandedStudentId === s.id && (
+                          <tr className="bg-slate-50/50">
+                            <td colSpan={7} className="px-4 sm:px-6 py-4">
+                              <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm max-w-4xl mx-auto">
+                                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">
+                                  Recorded Marks List ({term} - {year})
+                                </h4>
+                                {studentMarks.length === 0 ? (
+                                  <p className="text-xs text-slate-400 italic">No recorded marks found for this student.</p>
+                                ) : (
+                                  <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-xs font-sans">
+                                      <thead>
+                                        <tr className="border-b border-slate-100 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                                          <th className="py-2">Subject Name</th>
+                                          <th className="py-2 text-center">CAT</th>
+                                          <th className="py-2 text-center">Exam</th>
+                                          <th className="py-2 text-center">Assessments (Formative | Practical | Summative)</th>
+                                          <th className="py-2 text-center">Total Score (Weighted)</th>
+                                          <th className="py-2 text-center">Grade</th>
+                                          <th className="py-2 text-right">Assigned Teacher</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-100">
+                                        {studentMarks.map((m: any) => (
+                                          <tr key={m.id} className="text-slate-700 font-semibold">
+                                            <td className="py-2.5 text-slate-900 font-bold">{m.subject?.subjectName || "Subject"}</td>
+                                            <td className="py-2.5 text-center font-mono">{m.catMarks ?? 0}</td>
+                                            <td className="py-2.5 text-center font-mono">{m.examMarks ?? 0}</td>
+                                            <td className="py-2.5 text-center text-[10px] text-slate-550 font-normal">
+                                              F: {m.formativeAssessment ?? 0} | P: {m.practicalAssessment ?? 0} | S: {m.summativeAssessment ?? 0}
+                                            </td>
+                                            <td className="py-2.5 text-center font-bold text-emerald-600 font-mono">
+                                              {m.totalMarks ?? 0} ({(m.weightedScore ?? m.totalMarks ?? 0).toFixed(1)}%)
+                                            </td>
+                                            <td className="py-2.5 text-center font-mono">
+                                              <span className="bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 text-slate-800 font-bold">
+                                                {m.grade || "F"}
+                                              </span>
+                                            </td>
+                                            <td className="py-2.5 text-right text-[10px] text-slate-500 font-normal">{m.teacher?.fullname || "Unknown"}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
                     );
                   })
                 )}

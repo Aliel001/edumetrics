@@ -1,154 +1,283 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
 model User {
-  id         String   @id @default(cuid())
-  fullname   String
-  email      String   @unique
-  password   String
-  phone      String?
-  role       String   // "admin" or "teacher"
-  school_id  String   @default("default-school")
-  isVerified Boolean  @default(true)
-  createdAt  DateTime @default(now())
+  id                 String              @id @default(cuid())
+  fullname           String
+  email              String              @unique
+  password           String
+  phone              String?
+  role               String
+  school_id          String              @default("default-school")
+  isVerified         Boolean             @default(true)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  marks              Mark[]
+  loggedAttendances  StudentAttendance[]
+  assignments        TeacherAssignment[]
+  teacherAttendances TeacherAttendance[]
+  timetables         Timetable[]
 
-  assignments TeacherAssignment[]
-  marks       Mark[]
-  timetables  Timetable[]
+  @@index([email])
+  @@index([school_id])
 }
 
 model Class {
-  id        String   @id @default(cuid())
-  className String
-  school_id String   @default("default-school")
-  students  Student[]
+  id          String              @id @default(cuid())
+  className   String
+  school_id   String              @default("default-school")
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  students    Student[]
+  attendances StudentAttendance[]
   assignments TeacherAssignment[]
   timetables  Timetable[]
 
   @@unique([className, school_id])
+  @@index([school_id])
 }
 
 model Student {
-  id        String   @id @default(cuid())
-  firstname String
-  lastname  String
-  gender    String
-  class     Class    @relation(fields: [classId], references: [id])
-  classId   String
-  school_id String   @default("default-school")
-  marks     Mark[]
-  createdAt DateTime @default(now())
+  id          String              @id @default(cuid())
+  firstname   String
+  lastname    String
+  gender      String
+  classId     String
+  school_id   String              @default("default-school")
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  marks       Mark[]
+  reportCards ReportCard[]
+  class       Class               @relation(fields: [classId], references: [id], onDelete: Cascade)
+  attendances StudentAttendance[]
+
+  @@index([classId])
+  @@index([school_id])
 }
 
 model Subject {
-  id             String   @id @default(cuid())
+  id             String              @id @default(cuid())
   subjectName    String
-  periodsPerWeek Int      @default(0)
-  subjectWeight  Float    @default(0.0)
-  school_id      String   @default("default-school")
-  assignments    TeacherAssignment[]
+  periodsPerWeek Int                 @default(0)
+  subjectWeight  Float               @default(0.0)
+  school_id      String              @default("default-school")
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
   marks          Mark[]
+  assignments    TeacherAssignment[]
   timetables     Timetable[]
 
   @@unique([subjectName, school_id])
+  @@index([school_id])
 }
 
 model TeacherAssignment {
   id             String   @id @default(cuid())
-  teacher        User     @relation(fields: [teacherId], references: [id])
   teacherId      String
-  class          Class    @relation(fields: [classId], references: [id])
   classId        String
-  subject        Subject  @relation(fields: [subjectId], references: [id])
   subjectId      String
   periodsPerWeek Int      @default(5)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  class          Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  subject        Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  teacher        User     @relation(fields: [teacherId], references: [id], onDelete: Cascade)
 
   @@unique([teacherId, classId, subjectId])
+  @@index([teacherId])
+  @@index([classId])
+  @@index([subjectId])
 }
 
 model TimeSlot {
-  id          String   @id @default(cuid())
-  startTime   String
-  endTime     String
-  slotType    String   @default("class") // "class", "break", "lunch"
-  createdAt   DateTime @default(now())
-  timetables  Timetable[]
+  id         String      @id @default(cuid())
+  startTime  String
+  endTime    String
+  slotType   String      @default("class")
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  timetables Timetable[]
 }
 
 model Weekday {
-  id        String      @id @default(cuid())
-  dayName   String      @unique
+  id         String      @id @default(cuid())
+  dayName    String      @unique
+  createdAt  DateTime    @default(now())
   timetables Timetable[]
 }
 
 model Timetable {
   id         String   @id @default(cuid())
-  class      Class    @relation(fields: [classId], references: [id])
   classId    String
-  subject    Subject? @relation(fields: [subjectId], references: [id])
   subjectId  String?
-  teacher    User?    @relation(fields: [teacherId], references: [id])
   teacherId  String?
-  timeSlot   TimeSlot @relation(fields: [timeSlotId], references: [id])
   timeSlotId String
-  weekday    Weekday  @relation(fields: [weekdayId], references: [id])
   weekdayId  String
   createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  class      Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  subject    Subject? @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  teacher    User?    @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  timeSlot   TimeSlot @relation(fields: [timeSlotId], references: [id], onDelete: Cascade)
+  weekday    Weekday  @relation(fields: [weekdayId], references: [id], onDelete: Cascade)
 
   @@unique([classId, timeSlotId, weekdayId])
   @@unique([teacherId, timeSlotId, weekdayId])
+  @@index([classId])
+  @@index([subjectId])
+  @@index([teacherId])
+  @@index([timeSlotId])
+  @@index([weekdayId])
 }
 
 model Mark {
-  id                      String   @id @default(cuid())
-  student                 Student  @relation(fields: [studentId], references: [id])
+  id                      String        @id @default(cuid())
   studentId               String
-  subject                 Subject  @relation(fields: [subjectId], references: [id])
   subjectId               String
-  teacher                 User     @relation(fields: [teacherId], references: [id])
   teacherId               String
-  catMarks                Float    @default(0)
-  examMarks               Float    @default(0)
-  formativeAssessment     Float    @default(0)
-  comprehensiveAssessment Float    @default(0)
-  practicalAssessment     Float    @default(0)
-  summativeAssessment     Float    @default(0)
-  totalMarks              Float    @default(0)
-  averageMarks            Float    @default(0)
-  competencyStatus        String   @default("Not Yet Competent")
-  grade                   String   @default("F")
+  catMarks                Float         @default(0)
+  examMarks               Float         @default(0)
+  formativeAssessment     Float         @default(0)
+  comprehensiveAssessment Float         @default(0)
+  practicalAssessment     Float         @default(0)
+  summativeAssessment     Float         @default(0)
+  totalMarks              Float         @default(0)
+  averageMarks            Float         @default(0)
+  competencyStatus        String        @default("Not Yet Competent")
+  grade                   String        @default("F")
   term                    String
   year                    Int
-  academicYear            String   @default("")
-  school_id               String   @default("default-school")
-  createdAt               DateTime @default(now())
+  academicYear            String        @default("")
+  school_id               String        @default("default-school")
+  createdAt               DateTime      @default(now())
+  academicYearId          String?
+  termId                  String?
+  updatedAt               DateTime      @updatedAt
+  academicYearRelation    AcademicYear? @relation(fields: [academicYearId], references: [id])
+  student                 Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  subject                 Subject       @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  teacher                 User          @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  termRelation            Term?         @relation(fields: [termId], references: [id])
 
   @@unique([studentId, subjectId, term, year])
+  @@index([studentId])
+  @@index([subjectId])
+  @@index([teacherId])
+  @@index([school_id])
+  @@index([academicYear])
+  @@index([term])
+  @@index([termId])
+  @@index([academicYearId])
 }
 
 model GeneratorSettings {
-  id              String   @id @default("default")
-  periodsPerDay   Int      @default(8)
-  breakStartTime  String   @default("10:30")
-  breakDuration   Int      @default(30)
-  lunchStartTime  String   @default("13:00")
-  lunchDuration   Int      @default(60)
-  updatedAt       DateTime @updatedAt
+  id             String   @id @default("default")
+  periodsPerDay  Int      @default(8)
+  breakStartTime String   @default("10:30")
+  breakDuration  Int      @default(30)
+  lunchStartTime String   @default("13:00")
+  lunchDuration  Int      @default(60)
+  updatedAt      DateTime @updatedAt
+  createdAt      DateTime @default(now())
 }
 
 model SchoolBranding {
   school_id     String   @id
-  logo_url      String?  // base64 logo string
+  logo_url      String?
   primary_color String   @default("#022e66")
   updatedAt     DateTime @updatedAt
+  createdAt     DateTime @default(now())
 }
 
+model TeacherAttendance {
+  id        String   @id @default(cuid())
+  teacherId String
+  date      String
+  status    String
+  remark    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  teacher   User     @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  @@unique([teacherId, date])
+  @@index([teacherId])
+  @@index([date])
+}
+
+model StudentAttendance {
+  id        String   @id @default(cuid())
+  studentId String
+  classId   String
+  teacherId String
+  date      String
+  status    String
+  remark    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  class     Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  teacher   User     @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, date])
+  @@index([studentId])
+  @@index([classId])
+  @@index([teacherId])
+  @@index([date])
+}
+
+model AcademicYear {
+  id          String       @id @default(cuid())
+  name        String       @unique
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  marks       Mark[]
+  reportCards ReportCard[]
+  terms       Term[]
+
+  @@index([name])
+}
+
+model Term {
+  id             String       @id @default(cuid())
+  name           String
+  academicYearId String
+  startDate      DateTime?
+  endDate        DateTime?
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  marks          Mark[]
+  reportCards    ReportCard[]
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  @@unique([name, academicYearId])
+  @@index([academicYearId])
+}
+
+model ReportCard {
+  id             String       @id @default(cuid())
+  studentId      String
+  termId         String
+  academicYearId String
+  totalMarks     Float        @default(0.0)
+  averageMarks   Float        @default(0.0)
+  grade          String       @default("")
+  remarks        String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  student        Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  term           Term         @relation(fields: [termId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, termId, academicYearId])
+  @@index([studentId])
+  @@index([termId])
+  @@index([academicYearId])
+}

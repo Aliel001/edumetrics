@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import api from '../../lib/api';
 import { toast } from 'react-hot-toast';
-import { Plus, Search, Trash2, Edit2, Loader2, Link2 } from 'lucide-react';
+import { Plus, Search, Trash2, Edit2, Loader2, Link2, X, Check } from 'lucide-react';
 
 export default function Assignments() {
   const [assignments, setAssignments] = useState<any[]>([]);
@@ -15,6 +15,11 @@ export default function Assignments() {
 
   const [editingAssignment, setEditingAssignment] = useState<any>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // Search Engine & Filtering States
+  const [listSearchQuery, setListSearchQuery] = useState('');
+  const [teacherSearch, setTeacherSearch] = useState('');
+  const [isTeacherDropdownOpen, setIsTeacherDropdownOpen] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -87,6 +92,8 @@ export default function Assignments() {
       subjectId: a.subjectId, 
       periodsPerWeek: a.periodsPerWeek 
     });
+    setTeacherSearch(a.teacher?.fullname || '');
+    setIsTeacherDropdownOpen(false);
     setShowModal(true);
   };
 
@@ -101,6 +108,27 @@ export default function Assignments() {
     }
   };
 
+  const filteredAssignments = Array.isArray(assignments)
+    ? assignments.filter((a: any) => {
+        const query = listSearchQuery.toLowerCase();
+        return (
+          (a.teacher?.fullname || '').toLowerCase().includes(query) ||
+          (a.class?.className || '').toLowerCase().includes(query) ||
+          (a.subject?.subjectName || '').toLowerCase().includes(query)
+        );
+      })
+    : [];
+
+  const filteredTeachers = Array.isArray(teachers)
+    ? teachers.filter((t: any) => {
+        const query = teacherSearch.toLowerCase();
+        return (
+          (t.fullname || '').toLowerCase().includes(query) ||
+          (t.email || '').toLowerCase().includes(query)
+        );
+      })
+    : [];
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -109,9 +137,12 @@ export default function Assignments() {
           <p className="text-slate-500">Link teachers to classes and subjects</p>
         </div>
         <button 
+          id="btn-create-assignment-open"
           onClick={() => {
             setEditingAssignment(null);
             setFormData({ teacherId: '', classId: '', subjectId: '', periodsPerWeek: 5 });
+            setTeacherSearch('');
+            setIsTeacherDropdownOpen(false);
             setShowModal(true);
           }} 
           className="btn btn-primary flex items-center gap-2"
@@ -119,6 +150,30 @@ export default function Assignments() {
           <Plus size={20} />
           Create Assignment
         </button>
+      </div>
+
+      {/* Main List Filter Search Bar */}
+      <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 flex flex-col sm:flex-row items-center gap-3">
+        <div className="relative flex-1 w-full">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+          <input
+            id="list-search-query-input"
+            type="text"
+            placeholder="Search assignments by teacher, class, or subject..."
+            value={listSearchQuery}
+            onChange={(e) => setListSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all placeholder:text-slate-400"
+          />
+        </div>
+        {listSearchQuery && (
+          <button
+            id="clear-list-filter-button"
+            onClick={() => setListSearchQuery('')}
+            className="text-xs font-semibold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap cursor-pointer"
+          >
+            Clear Filter
+          </button>
+        )}
       </div>
 
       <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
@@ -141,12 +196,14 @@ export default function Assignments() {
                     Loading assignments...
                   </td>
                 </tr>
-              ) : (Array.isArray(assignments) && assignments.length === 0) ? (
+              ) : (filteredAssignments.length === 0) ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-8 text-center text-slate-400">No assignments found.</td>
+                  <td colSpan={5} className="px-6 py-8 text-center text-slate-400">
+                    {listSearchQuery ? "No matching assignments found." : "No assignments found."}
+                  </td>
                 </tr>
               ) : (
-                Array.isArray(assignments) && assignments.map((a) => (
+                filteredAssignments.map((a) => (
                   <tr key={a.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-6 py-4 font-semibold text-slate-900">{a.teacher.fullname}</td>
                     <td className="px-6 py-4 text-center text-slate-600 font-bold">{a.class.className}</td>
@@ -208,16 +265,77 @@ export default function Assignments() {
               <h3 className="text-xl font-bold text-slate-900">{editingAssignment ? 'Edit Assignment' : 'New Assignment'}</h3>
             </div>
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              <div>
+              <div className="relative">
                 <label className="block text-sm font-medium text-slate-700 mb-2">Select Teacher</label>
-                <select 
-                  className="input-field" 
-                  value={formData.teacherId}
-                  onChange={(e) => setFormData({...formData, teacherId: e.target.value})}
-                >
-                  <option value="">Choose a teacher</option>
-                  {Array.isArray(teachers) && teachers.map(t => <option key={t.id} value={t.id}>{t.fullname}</option>)}
-                </select>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                    <Search size={16} />
+                  </div>
+                  <input
+                    id="teacher-search-input"
+                    type="text"
+                    placeholder="Search teacher by name or email..."
+                    value={teacherSearch}
+                    onChange={(e) => {
+                      setTeacherSearch(e.target.value);
+                      setIsTeacherDropdownOpen(true);
+                      const match = teachers.find(t => t.fullname.toLowerCase() === e.target.value.toLowerCase());
+                      setFormData(prev => ({ ...prev, teacherId: match ? match.id : '' }));
+                    }}
+                    onFocus={() => setIsTeacherDropdownOpen(true)}
+                    className="input-field pl-10 pr-10 w-full"
+                  />
+                  {teacherSearch && (
+                    <button
+                      id="clear-teacher-button"
+                      type="button"
+                      onClick={() => {
+                        setTeacherSearch('');
+                        setFormData(prev => ({ ...prev, teacherId: '' }));
+                        setIsTeacherDropdownOpen(true);
+                      }}
+                      className="absolute inset-y-0 right-3 flex items-center text-slate-400 hover:text-slate-600 transition-colors"
+                    >
+                      <X size={16} />
+                    </button>
+                  )}
+                </div>
+
+                {isTeacherDropdownOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setIsTeacherDropdownOpen(false)} />
+                    <div className="absolute z-20 mt-1.5 w-full bg-white rounded-xl border border-slate-200 shadow-xl max-h-56 overflow-y-auto divide-y divide-slate-100">
+                      {filteredTeachers.length === 0 ? (
+                        <div className="p-4 text-xs text-slate-500 text-center font-medium">No matching teachers found</div>
+                      ) : (
+                        filteredTeachers.map(t => {
+                          const isSelected = formData.teacherId === t.id;
+                          return (
+                            <button
+                              id={`teacher-item-button-${t.id}`}
+                              key={t.id}
+                              type="button"
+                              onClick={() => {
+                                setFormData(prev => ({ ...prev, teacherId: t.id }));
+                                setTeacherSearch(t.fullname);
+                                setIsTeacherDropdownOpen(false);
+                              }}
+                              className={`w-full text-left px-4 py-2.5 text-sm transition-all hover:bg-slate-50 flex items-center justify-between ${
+                                isSelected ? 'bg-emerald-50/70 hover:bg-emerald-50 text-emerald-900 font-medium' : 'text-slate-700'
+                              }`}
+                            >
+                              <div className="flex flex-col">
+                                <span className={isSelected ? "font-bold" : "font-semibold"}>{t.fullname}</span>
+                                <span className="text-xs text-slate-400 font-normal">{t.email}</span>
+                              </div>
+                              {isSelected && <Check size={16} className="text-emerald-600" />}
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">Select Class</label>
@@ -248,8 +366,9 @@ export default function Assignments() {
                   min="1"
                   max="40"
                   className="input-field"
-                  value={formData.periodsPerWeek}
+                  value={isNaN(formData.periodsPerWeek) ? '' : formData.periodsPerWeek}
                   onChange={(e) => setFormData({...formData, periodsPerWeek: parseInt(e.target.value)})}
+                  id="assignment-periods-per-week-input"
                 />
               </div>
               <div className="flex gap-3 pt-6">

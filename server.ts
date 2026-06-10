@@ -15,7 +15,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import cors from 'cors';
 import { sendTeacherInviteEmail, sendTeacherCredentialsEmail } from './server-mailer.js';
-import { triggerBackup, restoreBackupFromJSON } from './server-backup.js';
+import { triggerBackup, restoreBackupFromJSON, setBackupPrismaClient } from './server-backup.js';
 
 declare global {
   namespace Express {
@@ -28,6 +28,7 @@ declare global {
 const prisma = new PrismaClient({
   log: ['error', 'warn'],
 });
+setBackupPrismaClient(prisma);
 
 const JWT_SECRET = process.env.JWT_SECRET || 'edumetric-secret-key-2024';
 
@@ -56,11 +57,24 @@ async function runDatabaseRepair() {
   }
   isRepairing = true;
   try {
+    console.log('🔄 Disconnecting Prisma client before database recovery to release SQLite file descriptors...');
+    try {
+      await prisma.$disconnect();
+    } catch (discErr) {
+      console.warn('Warning during pre-repair disconnect:', discErr);
+    }
+
     console.log('🔄 Triggering automated database recovery...');
     execSync('npx tsx prisma/db-repair-recreate.ts', { stdio: 'inherit' });
     console.log('✅ Automated database recovery completed!');
+
+    console.log('🔄 Reconnecting Prisma client after successful database recovery...');
+    await prisma.$connect();
   } catch (err: any) {
     console.error('❌ Database repair execution failed:', err.message || err);
+    try {
+      await prisma.$connect();
+    } catch (_) {}
   } finally {
     isRepairing = false;
   }
@@ -828,10 +842,22 @@ app.delete('/api/teachers/:id', authenticateToken, isAdmin, async (req, res) => 
       return res.status(404).json({ message: 'Staff member not found in your school' });
     }
 
+    // Clean up dependent files/relations for this teacher first
+    await prisma.teacherAssignment.deleteMany({
+      where: { teacherId: req.params.id }
+    });
+    await prisma.timetable.updateMany({
+      where: { teacherId: req.params.id },
+      data: { teacherId: null }
+    });
+    await prisma.mark.deleteMany({
+      where: { teacherId: req.params.id }
+    });
+
     await prisma.user.delete({ where: { id: req.params.id } });
-    res.json({ message: 'Teacher deleted' });
+    res.json({ message: 'Teacher deleted successfully' });
   } catch (error) {
-    res.status(400).json({ message: 'Cannot delete teacher because they have active assignments' });
+    res.status(400).json({ message: 'Cannot delete teacher' });
   }
 });
 
@@ -900,10 +926,35 @@ app.delete('/api/classes/:id', authenticateToken, isAdmin, async (req, res) => {
       return res.status(404).json({ message: 'Class not found in your school' });
     }
 
+    // Fetch student IDs belonging to this class
+    const studentsInClass = await prisma.student.findMany({
+      where: { classId: req.params.id },
+      select: { id: true }
+    });
+    const studentIds = studentsInClass.map(s => s.id);
+
+    // Cascade delete student marks, class students, teacher assignments, and timetables
+    if (studentIds.length > 0) {
+      await prisma.mark.deleteMany({
+        where: { studentId: { in: studentIds } }
+      });
+      await prisma.student.deleteMany({
+        where: { classId: req.params.id }
+      });
+    }
+
+    await prisma.teacherAssignment.deleteMany({
+      where: { classId: req.params.id }
+    });
+
+    await prisma.timetable.deleteMany({
+      where: { classId: req.params.id }
+    });
+
     await prisma.class.delete({ where: { id: req.params.id } });
-    res.json({ message: 'Class deleted' });
+    res.json({ message: 'Class deleted successfully' });
   } catch (error) {
-    res.status(400).json({ message: 'Cannot delete class because it has students or assignments' });
+    res.status(400).json({ message: 'Cannot delete class' });
   }
 });
 
@@ -963,10 +1014,21 @@ app.put('/api/subjects/:id', authenticateToken, isAdmin, async (req, res) => {
 
 app.delete('/api/subjects/:id', authenticateToken, isAdmin, async (req, res) => {
   try {
+    // Delete marks, teacher assignments, and timetables related to this subject
+    await prisma.mark.deleteMany({
+      where: { subjectId: req.params.id }
+    });
+    await prisma.teacherAssignment.deleteMany({
+      where: { subjectId: req.params.id }
+    });
+    await prisma.timetable.deleteMany({
+      where: { subjectId: req.params.id }
+    });
+
     await prisma.subject.delete({ where: { id: req.params.id } });
-    res.json({ message: 'Subject deleted' });
+    res.json({ message: 'Subject deleted successfully' });
   } catch (error) {
-    res.status(400).json({ message: 'Cannot delete subject because it is in use' });
+    res.status(400).json({ message: 'Cannot delete subject' });
   }
 });
 
@@ -1030,16 +1092,25 @@ app.put('/api/students/:id', authenticateToken, isAdmin, async (req, res) => {
 });
 
 app.delete('/api/students/:id', authenticateToken, isAdmin, async (req, res) => {
-  // Verify ownership of the student
-  const existingStudent = await prisma.student.findFirst({
-    where: { id: req.params.id, school_id: req.user.school_id }
-  });
-  if (!existingStudent) {
-    return res.status(404).json({ message: 'Student profile not found in your school' });
-  }
+  try {
+    // Verify ownership of the student
+    const existingStudent = await prisma.student.findFirst({
+      where: { id: req.params.id, school_id: req.user.school_id }
+    });
+    if (!existingStudent) {
+      return res.status(404).json({ message: 'Student profile not found in your school' });
+    }
 
-  await prisma.student.delete({ where: { id: req.params.id } });
-  res.json({ message: 'Student deleted' });
+    // Delete marks related to this student
+    await prisma.mark.deleteMany({
+      where: { studentId: req.params.id }
+    });
+
+    await prisma.student.delete({ where: { id: req.params.id } });
+    res.json({ message: 'Student deleted successfully' });
+  } catch (error) {
+    res.status(400).json({ message: 'Failed to delete student' });
+  }
 });
 
 // Assignments
@@ -2200,6 +2271,259 @@ app.post('/api/school-branding', authenticateToken, isAdmin, async (req: any, re
   }
 });
 
+// --- TEACHER ATTENDANCE ROUTES ---
+
+// GET /api/attendance/teachers
+app.get('/api/attendance/teachers', authenticateToken, async (req: any, res) => {
+  try {
+    const { date, teacherId } = req.query;
+    const where: any = {};
+    if (date) {
+      where.date = date as string;
+    }
+    if (teacherId) {
+      where.teacherId = teacherId as string;
+    }
+
+    const attendanceRecords = await prisma.teacherAttendance.findMany({
+      where,
+      orderBy: { date: 'desc' }
+    });
+
+    const teachers = await prisma.user.findMany({
+      where: { role: 'teacher' },
+      select: { id: true, fullname: true, email: true }
+    });
+
+    const teacherMap = new Map(teachers.map(t => [t.id, t]));
+
+    const enriched = attendanceRecords.map(rec => {
+      const teacher = teacherMap.get(rec.teacherId);
+      return {
+        ...rec,
+        teacherName: teacher ? teacher.fullname : 'Unknown Teacher',
+        teacherEmail: teacher ? teacher.email : ''
+      };
+    });
+
+    res.json(enriched);
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to retrieve teacher attendance records', details: error.message });
+  }
+});
+
+// POST /api/attendance/teachers
+app.post('/api/attendance/teachers', authenticateToken, async (req: any, res) => {
+  try {
+    const { teacherId, date, status, remark } = req.body;
+
+    if (!teacherId || !date || !status) {
+      return res.status(400).json({ error: 'Missing required fields: teacherId, date, status' });
+    }
+
+    // Teachers can only submit daily attendance for themselves. Admins can log for everyone.
+    if (req.user.role === 'teacher' && req.user.id !== teacherId) {
+      return res.status(403).json({ error: 'Teachers can only submit attendance check-ins for themselves' });
+    }
+
+    const record = await prisma.teacherAttendance.upsert({
+      where: {
+        teacherId_date: {
+          teacherId,
+          date
+        }
+      },
+      update: {
+        status,
+        remark: remark || null
+      },
+      create: {
+        teacherId,
+        date,
+        status,
+        remark: remark || null
+      }
+    });
+
+    triggerBackup();
+    res.json(record);
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to save attendance record', details: error.message });
+  }
+});
+
+
+// --- STUDENT ATTENDANCE ROUTES ---
+
+// GET /api/attendance/students
+app.get('/api/attendance/students', authenticateToken, async (req: any, res) => {
+  try {
+    const { date, classId, studentId } = req.query;
+
+    // Case 1: Fetching specific daily sheet for a class
+    if (classId && date) {
+      const students = await prisma.student.findMany({
+        where: { classId: classId as string },
+        orderBy: { firstname: 'asc' }
+      });
+
+      const attendanceRecords = await prisma.studentAttendance.findMany({
+        where: {
+          classId: classId as string,
+          date: date as string
+        }
+      });
+
+      const attendanceMap = new Map(attendanceRecords.map(rec => [rec.studentId, rec]));
+
+      const enriched = students.map(st => {
+        const record = attendanceMap.get(st.id);
+        return {
+          studentId: st.id,
+          firstname: st.firstname,
+          lastname: st.lastname,
+          gender: st.gender,
+          classId: st.classId,
+          status: record ? record.status : 'unrecorded',
+          remark: record ? record.remark : '',
+          attendanceId: record ? record.id : null,
+          teacherId: record ? record.teacherId : null
+        };
+      });
+
+      return res.json(enriched);
+    }
+
+    // Case 2: General queries / history logs
+    const where: any = {};
+    if (date) where.date = date as string;
+    if (studentId) where.studentId = studentId as string;
+    if (classId) where.classId = classId as string;
+
+    const records = await prisma.studentAttendance.findMany({
+      where,
+      orderBy: { date: 'desc' }
+    });
+
+    const studentIds = Array.from(new Set(records.map(r => r.studentId)));
+    const classIds = Array.from(new Set(records.map(r => r.classId)));
+    const teacherIds = Array.from(new Set(records.map(r => r.teacherId)));
+
+    const [students, classes, teachers] = await Promise.all([
+      prisma.student.findMany({ where: { id: { in: studentIds } } }),
+      prisma.class.findMany({ where: { id: { in: classIds } } }),
+      prisma.user.findMany({ where: { id: { in: teacherIds } }, select: { id: true, fullname: true } })
+    ]);
+
+    const studentMap = new Map(students.map(s => [s.id, s]));
+    const classMap = new Map(classes.map(c => [c.id, c]));
+    const teacherMap = new Map(teachers.map(t => [t.id, t]));
+
+    const enriched = records.map(rec => {
+      const s = studentMap.get(rec.studentId);
+      const c = classMap.get(rec.classId);
+      const t = teacherMap.get(rec.teacherId);
+      return {
+        ...rec,
+        studentName: s ? `${s.firstname} ${s.lastname}` : 'Unknown Student',
+        className: c ? c.className : 'Unknown Class',
+        teacherName: t ? t.fullname : 'Unknown Teacher'
+      };
+    });
+
+    res.json(enriched);
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to retrieve student attendance records', details: error.message });
+  }
+});
+
+// POST /api/attendance/students
+app.post('/api/attendance/students', authenticateToken, async (req: any, res) => {
+  try {
+    const { studentId, classId, date, status, remark } = req.body;
+
+    if (!studentId || !classId || !date || !status) {
+      return res.status(400).json({ error: 'Missing required fields: studentId, classId, date, status' });
+    }
+
+    const teacherId = req.user.id;
+
+    const record = await prisma.studentAttendance.upsert({
+      where: {
+        studentId_date: {
+          studentId,
+          date
+        }
+      },
+      update: {
+        status,
+        remark: remark || null,
+        teacherId,
+        classId
+      },
+      create: {
+        studentId,
+        classId,
+        teacherId,
+        date,
+        status,
+        remark: remark || null
+      }
+    });
+
+    triggerBackup();
+    res.json(record);
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to save student attendance record', details: error.message });
+  }
+});
+
+// POST /api/attendance/students/bulk
+app.post('/api/attendance/students/bulk', authenticateToken, async (req: any, res) => {
+  try {
+    const { date, classId, records } = req.body; // records: [{ studentId, status, remark }]
+
+    if (!classId || !date || !Array.isArray(records)) {
+      return res.status(400).json({ error: 'Missing required fields: classId, date, records' });
+    }
+
+    const teacherId = req.user.id;
+    const savedRecords = [];
+
+    for (const r of records) {
+      const saved = await prisma.studentAttendance.upsert({
+        where: {
+          studentId_date: {
+            studentId: r.studentId,
+            date
+          }
+        },
+        update: {
+          status: r.status,
+          remark: r.remark || null,
+          teacherId,
+          classId
+        },
+        create: {
+          studentId: r.studentId,
+          classId,
+          teacherId,
+          date,
+          status: r.status,
+          remark: r.remark || null
+        }
+      });
+      savedRecords.push(saved);
+    }
+
+    triggerBackup();
+    res.json({ success: true, count: savedRecords.length });
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to save bulk student attendance records', details: error.message });
+  }
+});
+
+
 // --- VITE MIDDLEWARE & STATIC SERVING ---
 
 async function seedWeekdays() {
@@ -2402,28 +2726,40 @@ async function doInitialization() {
         console.error('❌ Critical failure trying to auto-recover SQLite database:', recoveryErr.message || recoveryErr);
       }
     } else {
-      console.log('🔄 Resolving startup database error with automated repair and recovery...');
-      await runDatabaseRepair();
-      try {
-        await prisma.$connect();
-        await prisma.weekday.count();
-        isDbHealthy = true;
-        console.log('🔋 Database successfully restored, connected and verified healthy after auto-repair.');
-      } catch (retryError: any) {
-        console.error('❌ CRITICAL: Failed to connect/verify database even after repair:', retryError.message || retryError);
+      const dbUrl = process.env.DATABASE_URL || '';
+      const isSqlite = dbUrl.startsWith('file:') || dbUrl.startsWith('sqlite:');
+      if (isSqlite) {
+        console.log('🔄 Resolving startup database error with automated repair and recovery...');
+        await runDatabaseRepair();
+        try {
+          await prisma.$connect();
+          await prisma.weekday.count();
+          isDbHealthy = true;
+          console.log('🔋 Database successfully restored, connected and verified healthy after auto-repair.');
+        } catch (retryError: any) {
+          console.error('❌ CRITICAL: Failed to connect/verify database even after repair:', retryError.message || retryError);
+        }
+      } else {
+        console.error('❌ CRITICAL: Failed to connect or query PostgreSQL database. Please verify your DATABASE_URL is valid and contains a correct postgres/neon string.');
       }
     }
   }
 
   if (isDbHealthy) {
-    // Apply SQLite DELETE journal optimizations to prevent "database disk image is malformed" and handle concurrency cleanly on Cloud Run
-    try {
-      await prisma.$queryRawUnsafe(`PRAGMA journal_mode=DELETE;`);
-      await prisma.$queryRawUnsafe(`PRAGMA synchronous=NORMAL;`);
-      await prisma.$queryRawUnsafe(`PRAGMA busy_timeout=10000;`);
-      console.log('SQLite optimizations successfully applied: DELETE journal mode configured.');
-    } catch (optErr) {
-      console.error('Failed to apply database optimizations:', optErr);
+    const dbUrl = process.env.DATABASE_URL || '';
+    const isSqlite = dbUrl.startsWith('file:') || dbUrl.startsWith('sqlite:');
+    if (isSqlite) {
+      // Apply SQLite DELETE journal optimizations to prevent "database disk image is malformed" and handle concurrency cleanly on Cloud Run
+      try {
+        await prisma.$queryRawUnsafe(`PRAGMA journal_mode=DELETE;`);
+        await prisma.$queryRawUnsafe(`PRAGMA synchronous=NORMAL;`);
+        await prisma.$queryRawUnsafe(`PRAGMA busy_timeout=10000;`);
+        console.log('SQLite optimizations successfully applied: DELETE journal mode configured.');
+      } catch (optErr) {
+        console.error('Failed to apply database optimizations:', optErr);
+      }
+    } else {
+      console.log('PostgreSQL database loaded. Skipping SQLite-specific optimizations.');
     }
 
     try {

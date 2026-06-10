@@ -8,3 +8,8 @@ coverage/
 !.env.example
 
 /src/generated/prisma
+
+prisma/dev.db
+prisma/dev.db-wal
+prisma/dev.db-shm
+prisma/backup.json
